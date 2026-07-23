@@ -1,0 +1,8 @@
+/bin/
+/dist/
+/artifacts/
+*.tar.gz
+*.tar.gz.sig
+k0s-v*
+airgap-bundle/
+.DS_Store

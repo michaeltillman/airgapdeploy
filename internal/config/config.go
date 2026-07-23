@@ -1,0 +1,275 @@
+// Package config defines the single Config model that drives every generated
+// artifact, along with its defaults, validation, and YAML load/save helpers.
+package config
+
+import (
+	"fmt"
+	"net/url"
+	"os"
+	"regexp"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
+
+// Default versions target k0rdent Enterprise 1.4.0. Confirm exact versions
+// against https://get.mirantis.com/k0rdent-enterprise before a real run.
+const (
+	DefaultKcmVersion    = "1.4.0"
+	DefaultK0sVersion    = "v1.35.4+k0s.0"
+	DefaultSkopeoVersion = "v1.17.0"
+	DefaultNginxImage    = "nginx:1.30.2"
+	DefaultBusyboxImage  = "busybox:1.36.1"
+	DefaultNamespace     = "kcm-system"
+	DefaultBundleBaseURL = "https://get.mirantis.com/k0rdent-enterprise"
+	DefaultOutputDir     = "artifacts"
+	DefaultFileserverNS  = "k0s-fileserver"
+	DefaultPVCSize       = "10Gi"
+)
+
+// Config is the complete set of inputs the operator provides. It is the single
+// source of truth passed to every template.
+type Config struct {
+	// Versions
+	KcmVersion    string   `yaml:"kcmVersion" json:"kcmVersion"`
+	K0sVersion    string   `yaml:"k0sVersion" json:"k0sVersion"`
+	SkopeoVersion string   `yaml:"skopeoVersion" json:"skopeoVersion"`
+	Architectures []string `yaml:"architectures" json:"architectures"`
+
+	// Registry (non-authenticated OCI mirror, e.g. Harbor)
+	RegistryHost string `yaml:"registryHost" json:"registryHost"` // e.g. registry.local
+	// RegistryProject is the path segment images/charts live under.
+	RegistryProject string `yaml:"registryProject" json:"registryProject"` // default: k0rdent-enterprise
+
+	// k0s binary HTTP fileserver
+	FileserverURL string `yaml:"fileserverURL" json:"fileserverURL"` // e.g. http://binary.local/k0rdent-enterprise
+
+	// In-cluster nginx fileserver (used to serve the k0s binary)
+	FileserverNamespace string `yaml:"fileserverNamespace" json:"fileserverNamespace"`
+	StorageClass        string `yaml:"storageClass" json:"storageClass"`
+	PVCSize             string `yaml:"pvcSize" json:"pvcSize"`
+	NginxImage          string `yaml:"nginxImage" json:"nginxImage"`     // relative to RegistryHost
+	BusyboxImage        string `yaml:"busyboxImage" json:"busyboxImage"` // relative to Registry
+
+	// Install target
+	Namespace string `yaml:"namespace" json:"namespace"`
+
+	// Sources / output
+	BundleBaseURL string `yaml:"bundleBaseURL" json:"bundleBaseURL"`
+	OutputDir     string `yaml:"outputDir" json:"outputDir"`
+
+	// TLS
+	SelfSignedCA     bool   `yaml:"selfSignedCA" json:"selfSignedCA"`
+	CACertSecretName string `yaml:"caCertSecretName" json:"caCertSecretName"`
+}
+
+// Default returns a Config populated with sensible airgap defaults.
+func Default() *Config {
+	return &Config{
+		KcmVersion:          DefaultKcmVersion,
+		K0sVersion:          DefaultK0sVersion,
+		SkopeoVersion:       DefaultSkopeoVersion,
+		Architectures:       []string{"amd64", "arm64"},
+		RegistryHost:        "registry.local",
+		RegistryProject:     "k0rdent-enterprise",
+		FileserverURL:       "http://binary.local/k0rdent-enterprise",
+		FileserverNamespace: DefaultFileserverNS,
+		StorageClass:        "",
+		PVCSize:             DefaultPVCSize,
+		NginxImage:          DefaultNginxImage,
+		BusyboxImage:        DefaultBusyboxImage,
+		Namespace:           DefaultNamespace,
+		BundleBaseURL:       DefaultBundleBaseURL,
+		OutputDir:           DefaultOutputDir,
+		SelfSignedCA:        false,
+		CACertSecretName:    "registry-ca-cert",
+	}
+}
+
+// Registry returns the fully-qualified registry base, e.g.
+// "registry.local/k0rdent-enterprise".
+func (c *Config) Registry() string {
+	return c.RegistryHost + "/" + c.RegistryProject
+}
+
+// ChartsRepoURL returns the OCI URL for the k0rdent-enterprise charts.
+func (c *Config) ChartsRepoURL() string {
+	return "oci://" + c.Registry() + "/charts"
+}
+
+// BundleName returns the airgap bundle archive filename.
+func (c *Config) BundleName() string {
+	return fmt.Sprintf("airgap-bundle-%s.tar.gz", c.KcmVersion)
+}
+
+// K0sBinaryPrefix returns the k0s binary name without the architecture suffix,
+// e.g. "k0s-v1.35.4+k0s.0".
+func (c *Config) K0sBinaryPrefix() string {
+	return "k0s-" + c.K0sVersion
+}
+
+// K0sBinaryName returns the k0s binary filename for a given architecture.
+// The binary MUST NOT be renamed or child cluster deployment fails.
+func (c *Config) K0sBinaryName(arch string) string {
+	return fmt.Sprintf("k0s-%s-%s", c.K0sVersion, arch)
+}
+
+// PrimaryK0sBinary returns the k0s binary name for the first configured
+// architecture, used as the default binary to serve from the fileserver.
+func (c *Config) PrimaryK0sBinary() string {
+	arch := "amd64"
+	if len(c.Architectures) > 0 {
+		arch = c.Architectures[0]
+	}
+	return c.K0sBinaryName(arch)
+}
+
+// BusyboxImageRef returns the busybox image reference under the private registry.
+func (c *Config) BusyboxImageRef() string {
+	return c.Registry() + "/" + c.BusyboxImage
+}
+
+// NginxImageRef returns the nginx image reference (served from the registry host root).
+func (c *Config) NginxImageRef() string {
+	return c.RegistryHost + "/" + c.NginxImage
+}
+
+var (
+	hostRe    = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?(:[0-9]{1,5})?$`)
+	versionRe = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+`)
+	dnsLabel  = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
+)
+
+// Validate reports the first configuration problem, or nil if the Config is usable.
+func (c *Config) Validate() error {
+	if strings.TrimSpace(c.KcmVersion) == "" || !versionRe.MatchString(c.KcmVersion) {
+		return fmt.Errorf("kcmVersion %q is not a valid semantic version (e.g. 1.4.0)", c.KcmVersion)
+	}
+	if strings.TrimSpace(c.K0sVersion) == "" || !strings.HasPrefix(c.K0sVersion, "v") {
+		return fmt.Errorf("k0sVersion %q must look like v1.35.4+k0s.0", c.K0sVersion)
+	}
+	if len(c.Architectures) == 0 {
+		return fmt.Errorf("at least one architecture is required (e.g. amd64)")
+	}
+	for _, a := range c.Architectures {
+		if a != "amd64" && a != "arm64" {
+			return fmt.Errorf("unsupported architecture %q (expected amd64 or arm64)", a)
+		}
+	}
+	if !hostRe.MatchString(c.RegistryHost) {
+		return fmt.Errorf("registryHost %q is not a valid host[:port]", c.RegistryHost)
+	}
+	if strings.TrimSpace(c.RegistryProject) == "" {
+		return fmt.Errorf("registryProject must not be empty")
+	}
+	if err := validateURL(c.FileserverURL, "fileserverURL"); err != nil {
+		return err
+	}
+	if err := validateURL(c.BundleBaseURL, "bundleBaseURL"); err != nil {
+		return err
+	}
+	if !dnsLabel.MatchString(c.Namespace) {
+		return fmt.Errorf("namespace %q is not a valid DNS label", c.Namespace)
+	}
+	if !dnsLabel.MatchString(c.FileserverNamespace) {
+		return fmt.Errorf("fileserverNamespace %q is not a valid DNS label", c.FileserverNamespace)
+	}
+	if strings.TrimSpace(c.OutputDir) == "" {
+		return fmt.Errorf("outputDir must not be empty")
+	}
+	if c.SelfSignedCA && strings.TrimSpace(c.CACertSecretName) == "" {
+		return fmt.Errorf("caCertSecretName is required when selfSignedCA is enabled")
+	}
+	return nil
+}
+
+func validateURL(raw, field string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("%s %q is not a valid URL: %w", field, raw, err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("%s %q must use http or https", field, raw)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("%s %q is missing a host", field, raw)
+	}
+	return nil
+}
+
+// Normalize trims whitespace and applies defaults for any empty optional fields.
+// It is called before validation so partially-filled configs behave predictably.
+func (c *Config) Normalize() {
+	c.KcmVersion = strings.TrimSpace(c.KcmVersion)
+	c.K0sVersion = strings.TrimSpace(c.K0sVersion)
+	c.RegistryHost = strings.TrimSpace(strings.TrimSuffix(c.RegistryHost, "/"))
+	c.RegistryProject = strings.Trim(strings.TrimSpace(c.RegistryProject), "/")
+	c.FileserverURL = strings.TrimSpace(strings.TrimSuffix(c.FileserverURL, "/"))
+	c.BundleBaseURL = strings.TrimSpace(strings.TrimSuffix(c.BundleBaseURL, "/"))
+	c.Namespace = strings.TrimSpace(c.Namespace)
+	c.FileserverNamespace = strings.TrimSpace(c.FileserverNamespace)
+	c.OutputDir = strings.TrimSpace(c.OutputDir)
+
+	d := Default()
+	if c.SkopeoVersion == "" {
+		c.SkopeoVersion = d.SkopeoVersion
+	}
+	if c.RegistryProject == "" {
+		c.RegistryProject = d.RegistryProject
+	}
+	if c.FileserverNamespace == "" {
+		c.FileserverNamespace = d.FileserverNamespace
+	}
+	if c.PVCSize == "" {
+		c.PVCSize = d.PVCSize
+	}
+	if c.NginxImage == "" {
+		c.NginxImage = d.NginxImage
+	}
+	if c.BusyboxImage == "" {
+		c.BusyboxImage = d.BusyboxImage
+	}
+	if c.Namespace == "" {
+		c.Namespace = d.Namespace
+	}
+	if c.BundleBaseURL == "" {
+		c.BundleBaseURL = d.BundleBaseURL
+	}
+	if c.OutputDir == "" {
+		c.OutputDir = d.OutputDir
+	}
+	if len(c.Architectures) == 0 {
+		c.Architectures = d.Architectures
+	}
+	if c.CACertSecretName == "" {
+		c.CACertSecretName = d.CACertSecretName
+	}
+}
+
+// Load reads a YAML config file, filling defaults for any omitted fields.
+func Load(path string) (*Config, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	c := Default()
+	if err := yaml.Unmarshal(b, c); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	c.Normalize()
+	return c, nil
+}
+
+// MarshalYAML renders the config as YAML bytes.
+func (c *Config) MarshalYAML() ([]byte, error) {
+	return yaml.Marshal(c)
+}
+
+// Save writes the config as YAML to path.
+func (c *Config) Save(path string) error {
+	b, err := yaml.Marshal(c)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, b, 0o644)
+}

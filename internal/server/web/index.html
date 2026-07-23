@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>airgapdeploy — k0rdent Enterprise Airgap Installer</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">⛰</span>
+      <div>
+        <h1>airgapdeploy</h1>
+        <p class="sub">Airgapped k0rdent Enterprise installer</p>
+      </div>
+    </div>
+    <div class="mode" id="mode-badge" title="Execution mode">…</div>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar" id="nav"></nav>
+
+    <main class="content">
+      <!-- Configure -->
+      <section class="panel" data-phase="configure">
+        <h2>1 · Configure</h2>
+        <p class="lead">Describe your environment. These values drive every generated
+          script and manifest. Defaults target k0rdent Enterprise
+          <strong>1.4.0</strong>; confirm exact versions against
+          <code>get.mirantis.com</code>.</p>
+
+        <form id="cfg-form" autocomplete="off">
+          <fieldset>
+            <legend>Versions</legend>
+            <label>k0rdent Enterprise version
+              <input name="kcmVersion" required></label>
+            <label>k0s version
+              <input name="k0sVersion" required></label>
+            <label>skopeo version (bundled image)
+              <input name="skopeoVersion"></label>
+            <label>Architectures
+              <span class="checks">
+                <label class="chk"><input type="checkbox" name="arch" value="amd64"> amd64</label>
+                <label class="chk"><input type="checkbox" name="arch" value="arm64"> arm64</label>
+              </span>
+            </label>
+          </fieldset>
+
+          <fieldset>
+            <legend>Private registry (non-authenticated)</legend>
+            <label>Registry host
+              <input name="registryHost" placeholder="registry.local" required></label>
+            <label>Registry project / path
+              <input name="registryProject" placeholder="k0rdent-enterprise" required></label>
+            <p class="hint">Images and charts will be pushed to
+              <code id="derived-registry">registry.local/k0rdent-enterprise</code>.</p>
+          </fieldset>
+
+          <fieldset>
+            <legend>k0s binary fileserver</legend>
+            <label>Fileserver URL
+              <input name="fileserverURL" placeholder="http://binary.local/k0rdent-enterprise" required></label>
+            <label>Fileserver namespace
+              <input name="fileserverNamespace" placeholder="k0s-fileserver"></label>
+            <label>StorageClass (blank = cluster default)
+              <input name="storageClass" placeholder=""></label>
+            <label>PVC size
+              <input name="pvcSize" placeholder="10Gi"></label>
+            <label>nginx image (registry host root)
+              <input name="nginxImage" placeholder="nginx:1.30.2"></label>
+            <label>busybox image (under project)
+              <input name="busyboxImage" placeholder="busybox:1.36.1"></label>
+          </fieldset>
+
+          <fieldset>
+            <legend>Install target &amp; sources</legend>
+            <label>Install namespace
+              <input name="namespace" placeholder="kcm-system"></label>
+            <label>Bundle base URL
+              <input name="bundleBaseURL" placeholder="https://get.mirantis.com/k0rdent-enterprise"></label>
+            <label>Output directory
+              <input name="outputDir" placeholder="artifacts"></label>
+          </fieldset>
+
+          <fieldset>
+            <legend>TLS</legend>
+            <label class="chk inline"><input type="checkbox" name="selfSignedCA"> Registry / fileserver use a self-signed CA</label>
+            <label>CA cert secret name
+              <input name="caCertSecretName" placeholder="registry-ca-cert"></label>
+          </fieldset>
+
+          <div class="actions">
+            <button type="submit" class="primary" id="generate-btn">Generate artifacts</button>
+            <span class="status" id="gen-status"></span>
+          </div>
+        </form>
+      </section>
+
+      <!-- Generated-file phases render here -->
+      <section class="panel hidden" data-phase="prep"></section>
+      <section class="panel hidden" data-phase="fileserver"></section>
+      <section class="panel hidden" data-phase="install"></section>
+      <section class="panel hidden" data-phase="verify"></section>
+      <section class="panel hidden" data-phase="runbook"></section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
