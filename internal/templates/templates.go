@@ -40,6 +40,10 @@ var templatePaths = []string{
 	"assets/03-values.yaml.tmpl",
 	"assets/04-install.sh.tmpl",
 	"assets/05-verify.sh.tmpl",
+	"assets/check-access.sh.tmpl",
+	"assets/check-node-pull/namespace-daemonset.yaml.tmpl",
+	"assets/check-node-pull/run.sh.tmpl",
+	"assets/diagnose.sh.tmpl",
 	"assets/RUNBOOK.md.tmpl",
 }
 

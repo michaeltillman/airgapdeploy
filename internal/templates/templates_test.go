@@ -112,6 +112,64 @@ func TestTLSModeRendering(t *testing.T) {
 	}
 }
 
+func TestPreflightAndDiagnosticsArtifacts(t *testing.T) {
+	c := config.Default()
+	c.RegistryHost = "harbor.corp"
+	arts, err := Render(c)
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	byPath := map[string]string{}
+	for _, a := range arts {
+		byPath[a.Path] = string(a.Content)
+	}
+	for _, p := range []string{
+		"check-access.sh",
+		"check-node-pull/namespace-daemonset.yaml",
+		"check-node-pull/run.sh",
+		"diagnose.sh",
+	} {
+		if _, ok := byPath[p]; !ok {
+			t.Errorf("missing generated artifact %s", p)
+		}
+	}
+	if !strings.Contains(byPath["check-node-pull/namespace-daemonset.yaml"], "kind: DaemonSet") {
+		t.Error("node pull test should be a DaemonSet (per-node coverage)")
+	}
+	if !strings.Contains(byPath["check-node-pull/namespace-daemonset.yaml"], "harbor.corp") {
+		t.Error("node pull test should reference the configured registry")
+	}
+	if !strings.Contains(byPath["check-access.sh"], "/v2/") {
+		t.Error("access check should probe the registry v2 API")
+	}
+	if !strings.Contains(byPath["diagnose.sh"], "ImagePullBackOff") {
+		t.Error("diagnose should detect image pull failures")
+	}
+}
+
+func TestAccessCheckTLSBranching(t *testing.T) {
+	custom := config.Default()
+	custom.TLSMode = config.TLSCustomCA
+	cArts, _ := Render(custom)
+	var access string
+	for _, a := range cArts {
+		if a.Path == "check-access.sh" {
+			access = string(a.Content)
+		}
+	}
+	if !strings.Contains(access, "--cacert") || !strings.Contains(access, "openssl s_client") {
+		t.Error("cert mode access check should verify TLS against the CA")
+	}
+
+	none := config.Default()
+	nArts, _ := Render(none)
+	for _, a := range nArts {
+		if a.Path == "check-access.sh" && !strings.Contains(string(a.Content), "-k") {
+			t.Error("none mode access check should probe insecurely (-k)")
+		}
+	}
+}
+
 func TestShScriptsMarkedExecutable(t *testing.T) {
 	arts, _ := Render(config.Default())
 	for _, a := range arts {

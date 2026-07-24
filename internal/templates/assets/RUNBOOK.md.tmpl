@@ -66,18 +66,46 @@ Expect `HTTP/1.1 200 OK`. Make sure this URL matches `fileserverURL`
 (`{{.FileserverURL}}`) in your config — update `03-values.yaml` if the
 LoadBalancer IP differs from what you configured.
 
-### 2. Install k0rdent Enterprise
+### 2. Validate access before installing
+Prove the registry and every node can reach, trust, and pull images:
+```bash
+./check-access.sh                     # registry reachable/trusted, images present, fileserver up
+./check-node-pull/run.sh              # DaemonSet pulls a canary image on EVERY node
+```
+`check-access.sh` exits non-zero if anything fails. `check-node-pull/run.sh`
+reports per-node pull results and, on failure, prints the offending node and
+events. Fix any failures here before installing — they are the same failures
+that would otherwise surface mid-install as `ImagePullBackOff`.
+
+### 3. Install k0rdent Enterprise
 ```bash
 ./04-install.sh
 ```
 This runs `helm install kcm {{.ChartsRepoURL}}/k0rdent-enterprise --version {{.KcmVersion}} -n {{.Namespace}} --create-namespace -f 03-values.yaml`.
 
-### 3. Verify (wait 5–10 minutes first)
+### 4. Verify (wait 5–10 minutes first)
 ```bash
 ./05-verify.sh
 ```
 Expect ~30 pods `Running` in `{{.Namespace}}`, ~10 in `projectsveltos`,
 `Management` READY = `True`, and all templates VALID.
+
+### Troubleshooting — an image will not pull or install
+```bash
+./diagnose.sh
+```
+Surfaces image-pull/crash errors (with the offending image, node, and events),
+Helm release status, and any templates that are not valid, then lists the most
+likely causes. Re-run `./check-access.sh` to re-test registry/fileserver access.
+{{- if .UsesCustomTLS}}
+
+> **Node CA trust.** The `{{.CACertSecretName}}` Kubernetes secret makes the
+> *controller* trust the registry, but each node's **container runtime**
+> (containerd) must ALSO trust the CA to pull images. If `check-node-pull`
+> fails with x509/certificate errors, add the CA to the nodes' containerd
+> registry config (e.g. a `hosts.toml` / `ca_file` for `{{.RegistryHost}}`) and
+> re-test.
+{{- end}}
 
 ---
 

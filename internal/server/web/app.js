@@ -24,6 +24,17 @@ const PHASES = [
     ],
   },
   {
+    id: "preflight", label: "Preflight",
+    intro: "After the fileserver is up and before installing, prove that the registry " +
+           "and every node can reach, trust, and pull images. Run check-access.sh anywhere; " +
+           "run check-node-pull to test all nodes from inside the cluster.",
+    files: [
+      { name: "check-access.sh", run: true },
+      { name: "check-node-pull/namespace-daemonset.yaml" },
+      { name: "check-node-pull/run.sh", run: true },
+    ],
+  },
+  {
     id: "install", label: "Install",
     intro: "Airgapped cluster side. Review the values, then install the kcm chart from your registry.",
     files: [
@@ -35,6 +46,12 @@ const PHASES = [
     id: "verify", label: "Verify",
     intro: "Wait 5–10 minutes after install, then check pods, the Management object, and templates.",
     files: [{ name: "05-verify.sh", run: true }],
+  },
+  {
+    id: "diagnostics", label: "Diagnostics",
+    intro: "If an image will not pull or a component will not install, run this to surface " +
+           "pull errors, crashing pods, their events, the Helm release status, and template readiness.",
+    files: [{ name: "diagnose.sh", run: true }],
   },
   { id: "runbook", label: "Runbook", files: [{ name: "RUNBOOK.md", md: true }] },
 ];
