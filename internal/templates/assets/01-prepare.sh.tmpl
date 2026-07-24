@@ -26,6 +26,11 @@ WORKDIR="${WORKDIR:-$(pwd)}"
 BUNDLE="airgap-bundle-${KCM_VERSION}.tar.gz"
 BUNDLE_DIR="${WORKDIR}/airgap-bundle"
 COSIGN_PUB="${COSIGN_PUB:-${BUNDLE_BASE_URL}/cosign.pub}"
+{{- if .UsesCustomTLS}}
+# TLS mode: {{.TLSModeLabel}}. The push below verifies the registry certificate
+# against this CA cert (skopeo --dest-cert-dir). Must be readable on this machine.
+CA_CERT_PATH="${CA_CERT_PATH:-{{.CACertPath}}}"
+{{- end}}
 
 echo "==> Registry target: ${REGISTRY}"
 echo "==> k0rdent Enterprise version: ${KCM_VERSION}"
@@ -64,7 +69,20 @@ docker load -i "${BUNDLE_DIR}/skopeo_${SKOPEO_VERSION}.tar"
 # docker login "${REGISTRY_HOST}"
 
 # ---- 6. Push all images and charts into the private registry ----------------
-echo "==> Pushing images and charts to ${REGISTRY}"
+{{- if .UsesCustomTLS}}
+if [[ ! -f "${CA_CERT_PATH}" ]]; then
+  echo "ERROR: CA certificate not found at ${CA_CERT_PATH}." >&2
+  echo "The push verifies the registry cert against this CA. Set CA_CERT_PATH and re-run." >&2
+  exit 1
+fi
+# skopeo trusts *.crt files found in --dest-cert-dir; mount the CA cert as ca.crt.
+CERT_DIR="$(mktemp -d)"
+cp "${CA_CERT_PATH}" "${CERT_DIR}/ca.crt"
+trap 'rm -rf "${CERT_DIR}"' EXIT
+echo "==> Pushing images and charts to ${REGISTRY} (verifying against ${CA_CERT_PATH})"
+{{- else}}
+echo "==> Pushing images and charts to ${REGISTRY} (TLS verification disabled)"
+{{- end}}
 cd "${BUNDLE_DIR}"
 for file in $(find . -type f ! -name 'skopeo*' | sed -s 's~^./~~g'); do
   echo "    -> ${file}"
@@ -72,8 +90,14 @@ for file in $(find . -type f ! -name 'skopeo*' | sed -s 's~^./~~g'); do
   docker run --rm --network=host \
     -v "${HOME}/.docker/config.json:/config.json" \
     -v "${PWD}:/airgap-bundle" -w /airgap-bundle \
+{{- if .UsesCustomTLS}}
+    -v "${CERT_DIR}:/certs:ro" \
+    "skopeo:${SKOPEO_VERSION}" copy -a --authfile /config.json \
+    --insecure-policy --dest-tls-verify=true --dest-cert-dir /certs \
+{{- else}}
     "skopeo:${SKOPEO_VERSION}" copy -a --authfile /config.json \
     --insecure-policy --dest-tls-verify=false \
+{{- end}}
     "oci-archive:${file}" "docker://${REGISTRY}/${bn%_*}:${bn#*_}"
 done
 cd "${WORKDIR}"

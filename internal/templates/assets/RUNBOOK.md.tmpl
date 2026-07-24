@@ -92,7 +92,10 @@ Expect ~30 pods `Running` in `{{.Namespace}}`, ~10 in `projectsveltos`,
   `{{.CACertSecretName}}` secret from `{{.CACertPath}}` (override with
   `CA_CERT_PATH`) and `03-values.yaml` sets `registryCertSecret`{{if .FileserverIsHTTPS}} and `k0sURLCertSecret`{{end}}.
   Provide {{if eq .TLSMode "self-signed"}}the registry's self-signed certificate{{else}}the CA bundle that signed the registry certificate{{end}} as `{{.CACertPath}}`
-  (PEM). Copy it into the airgap alongside the scripts.
+  (PEM). Copy it into the airgap alongside the scripts. The same file is also
+  needed on the **prep machine** — `01-prepare.sh` mounts it into skopeo and
+  pushes with TLS verification enabled (`--dest-cert-dir`), so the registry cert
+  is validated against your CA rather than trusted blindly.
 {{- else}}
 - **TLS (none).** No custom CA is configured; the registry is expected to be
   plain HTTP or to present a publicly-trusted certificate. To trust a

@@ -95,6 +95,21 @@ func TestTLSModeRendering(t *testing.T) {
 	if !strings.Contains(https["03-values.yaml"], "k0sURLCertSecret:") {
 		t.Error("HTTPS fileserver should emit k0sURLCertSecret")
 	}
+
+	// Prep-side push: cert modes verify against the CA; none disables verify.
+	if !strings.Contains(none["01-prepare.sh"], "--dest-tls-verify=false") {
+		t.Error("none mode push should disable TLS verification")
+	}
+	if strings.Contains(none["01-prepare.sh"], "--dest-cert-dir") {
+		t.Error("none mode push should not use --dest-cert-dir")
+	}
+	prep := http["01-prepare.sh"]
+	if !strings.Contains(prep, "--dest-tls-verify=true") || !strings.Contains(prep, "--dest-cert-dir /certs") {
+		t.Error("cert mode push should verify against the CA via --dest-cert-dir")
+	}
+	if strings.Contains(prep, "--dest-tls-verify=false") {
+		t.Error("cert mode push should not disable TLS verification")
+	}
 }
 
 func TestShScriptsMarkedExecutable(t *testing.T) {
