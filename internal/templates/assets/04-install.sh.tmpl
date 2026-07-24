@@ -13,17 +13,32 @@ NAMESPACE="${NAMESPACE:-{{.Namespace}}}"
 KCM_VERSION="${KCM_VERSION:-{{.KcmVersion}}}"
 CHART="${CHART:-{{.ChartsRepoURL}}/k0rdent-enterprise}"
 VALUES="${VALUES:-$(dirname "$0")/03-values.yaml}"
-{{- if .SelfSignedCA}}
+{{- if .UsesCustomTLS}}
 
-# --- Self-signed CA secret for the registry / fileserver ---------------------
-# Create the CA secret before installing if it does not already exist. Replace
-# ca.crt with the path to your registry/fileserver CA certificate.
+# --- TLS: {{.TLSModeLabel}} ---
+# The registry{{if .FileserverIsHTTPS}}/fileserver{{end}} presents a
+# {{if eq .TLSMode "self-signed"}}self-signed certificate{{else}}certificate signed by a custom CA{{end}}.
+# Create a secret containing the trusted certificate (as ca.crt) before install.
+# CA_CERT_PATH must point to:
+{{- if eq .TLSMode "self-signed"}}
+#   the registry's self-signed certificate (PEM).
+{{- else}}
+#   the CA bundle (PEM) that signed the registry certificate.
+{{- end}}
+CA_CERT_PATH="${CA_CERT_PATH:-{{.CACertPath}}}"
 if ! kubectl get secret "{{.CACertSecretName}}" -n "${NAMESPACE}" >/dev/null 2>&1; then
-  echo "==> Creating CA secret {{.CACertSecretName}} in ${NAMESPACE}"
+  if [[ ! -f "${CA_CERT_PATH}" ]]; then
+    echo "ERROR: CA certificate not found at ${CA_CERT_PATH}." >&2
+    echo "Set CA_CERT_PATH to your certificate file and re-run." >&2
+    exit 1
+  fi
+  echo "==> Creating CA secret {{.CACertSecretName}} in ${NAMESPACE} from ${CA_CERT_PATH}"
   kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
   kubectl create secret generic "{{.CACertSecretName}}" \
-    --from-file=ca.crt="${CA_CERT_PATH:-./ca.crt}" \
+    --from-file=ca.crt="${CA_CERT_PATH}" \
     -n "${NAMESPACE}"
+else
+  echo "==> CA secret {{.CACertSecretName}} already exists in ${NAMESPACE}, skipping"
 fi
 {{- end}}
 

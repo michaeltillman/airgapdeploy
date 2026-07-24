@@ -80,6 +80,9 @@ form input[type=text], form input:not([type]) {
 }
 form input:focus { outline: 2px solid var(--accent); border-color: transparent; }
 .checks { display: flex; gap: 18px; margin-top: 6px; }
+.radios { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.radios .chk small { color: var(--muted); font-weight: 400; }
+#ca-fields { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 14px; }
 .chk { display: inline-flex; align-items: center; gap: 7px; font-weight: 500; margin: 0; }
 .chk.inline { margin-bottom: 14px; }
 .chk input { width: auto; }

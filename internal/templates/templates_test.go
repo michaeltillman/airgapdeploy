@@ -53,6 +53,50 @@ func TestRenderSubstitutesConfig(t *testing.T) {
 	}
 }
 
+func TestTLSModeRendering(t *testing.T) {
+	render := func(mode, fsURL string) map[string]string {
+		c := config.Default()
+		c.TLSMode = mode
+		c.FileserverURL = fsURL
+		arts, err := Render(c)
+		if err != nil {
+			t.Fatalf("Render(%s): %v", mode, err)
+		}
+		m := map[string]string{}
+		for _, a := range arts {
+			m[a.Path] = string(a.Content)
+		}
+		return m
+	}
+
+	// none: no cert secrets wired anywhere.
+	none := render(config.TLSNone, "http://files.local/kre")
+	if strings.Contains(none["03-values.yaml"], "registryCertSecret") {
+		t.Error("none mode should not emit registryCertSecret")
+	}
+	if strings.Contains(none["04-install.sh"], "create secret") {
+		t.Error("none mode install script should not create a secret")
+	}
+
+	// custom-ca + HTTP fileserver: registry secret only, no k0sURLCertSecret.
+	http := render(config.TLSCustomCA, "http://files.local/kre")
+	if !strings.Contains(http["03-values.yaml"], "registryCertSecret:") {
+		t.Error("custom-ca should emit registryCertSecret")
+	}
+	if strings.Contains(http["03-values.yaml"], "k0sURLCertSecret:") {
+		t.Error("HTTP fileserver should not emit the k0sURLCertSecret key")
+	}
+	if !strings.Contains(http["04-install.sh"], "kubectl create secret generic") {
+		t.Error("custom-ca install script should create the CA secret")
+	}
+
+	// self-signed + HTTPS fileserver: both cert secrets wired.
+	https := render(config.TLSSelfSigned, "https://files.local/kre")
+	if !strings.Contains(https["03-values.yaml"], "k0sURLCertSecret:") {
+		t.Error("HTTPS fileserver should emit k0sURLCertSecret")
+	}
+}
+
 func TestShScriptsMarkedExecutable(t *testing.T) {
 	arts, _ := Render(config.Default())
 	for _, a := range arts {

@@ -12,7 +12,7 @@ the Mirantis airgap install procedure for your specific configuration:
 | Charts (OCI)         | `{{.ChartsRepoURL}}` |
 | k0s fileserver URL   | `{{.FileserverURL}}` |
 | Install namespace    | `{{.Namespace}}` |
-| Self-signed CA       | `{{if .SelfSignedCA}}yes ({{.CACertSecretName}}){{else}}no{{end}}` |
+| TLS mode             | `{{.TLSMode}}`{{if .UsesCustomTLS}} — secret `{{.CACertSecretName}}` from `{{.CACertPath}}`{{end}} |
 
 The install has **two sides**. Do them in order.
 
@@ -87,10 +87,16 @@ Expect ~30 pods `Running` in `{{.Namespace}}`, ~10 in `projectsveltos`,
   require authentication (the v1.4.0 default). If yours does, you will also need
   image-pull and registry-credential secrets plus extra `values.yaml` keys — not
   generated here.
-{{- if .SelfSignedCA}}
-- **Self-signed CA.** `04-install.sh` creates the `{{.CACertSecretName}}` secret
-  from `./ca.crt` (override with `CA_CERT_PATH`) before installing. Ensure that
-  CA signs both the registry and fileserver certificates.
+{{- if .UsesCustomTLS}}
+- **TLS ({{.TLSModeLabel}}).** Before install, `04-install.sh` creates the
+  `{{.CACertSecretName}}` secret from `{{.CACertPath}}` (override with
+  `CA_CERT_PATH`) and `03-values.yaml` sets `registryCertSecret`{{if .FileserverIsHTTPS}} and `k0sURLCertSecret`{{end}}.
+  Provide {{if eq .TLSMode "self-signed"}}the registry's self-signed certificate{{else}}the CA bundle that signed the registry certificate{{end}} as `{{.CACertPath}}`
+  (PEM). Copy it into the airgap alongside the scripts.
+{{- else}}
+- **TLS (none).** No custom CA is configured; the registry is expected to be
+  plain HTTP or to present a publicly-trusted certificate. To trust a
+  self-signed or internal-CA registry, choose that TLS mode and regenerate.
 {{- end}}
 - **Offline cosign.** `01-prepare.sh` runs on the internet-connected prep
   machine, so signature verification uses the online transparency log. For fully

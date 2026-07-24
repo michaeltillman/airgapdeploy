@@ -84,10 +84,21 @@
           </fieldset>
 
           <fieldset>
-            <legend>TLS</legend>
-            <label class="chk inline"><input type="checkbox" name="selfSignedCA"> Registry / fileserver use a self-signed CA</label>
-            <label>CA cert secret name
-              <input name="caCertSecretName" placeholder="registry-ca-cert"></label>
+            <legend>TLS / certificates</legend>
+            <label>How does the registry present its certificate?
+              <span class="radios" id="tls-mode">
+                <label class="chk"><input type="radio" name="tlsMode" value="none"> None <small>— plain HTTP or publicly-trusted</small></label>
+                <label class="chk"><input type="radio" name="tlsMode" value="self-signed"> Self-signed cert</label>
+                <label class="chk"><input type="radio" name="tlsMode" value="custom-ca"> Custom / internal CA</label>
+              </span>
+            </label>
+            <div id="ca-fields" class="hidden">
+              <label>Path to the certificate file (on the machine that runs the install)
+                <input name="caCertPath" placeholder="./ca.crt"></label>
+              <p class="hint" id="ca-hint"></p>
+              <label>CA cert secret name
+                <input name="caCertSecretName" placeholder="registry-ca-cert"></label>
+            </div>
           </fieldset>
 
           <div class="actions">

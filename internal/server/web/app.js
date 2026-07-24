@@ -113,21 +113,39 @@ function show(id) {
 const TEXT_FIELDS = [
   "kcmVersion", "k0sVersion", "skopeoVersion", "registryHost", "registryProject",
   "fileserverURL", "fileserverNamespace", "storageClass", "pvcSize", "nginxImage",
-  "busyboxImage", "namespace", "bundleBaseURL", "outputDir", "caCertSecretName",
+  "busyboxImage", "namespace", "bundleBaseURL", "outputDir", "caCertPath", "caCertSecretName",
 ];
+
+const CA_HINTS = {
+  "self-signed": "Provide the registry's own self-signed certificate (PEM). A Secret with this as ca.crt is created before install.",
+  "custom-ca": "Provide the CA bundle (PEM) that signed the registry certificate. A Secret with this as ca.crt is created before install.",
+};
 
 function fillForm(cfg) {
   TEXT_FIELDS.forEach((f) => { const el = form()[f]; if (el) el.value = cfg[f] ?? ""; });
   $$('input[name="arch"]').forEach((c) => { c.checked = (cfg.architectures || []).includes(c.value); });
-  $('input[name="selfSignedCA"]').checked = !!cfg.selfSignedCA;
+  const mode = cfg.tlsMode || "none";
+  const radio = $(`input[name="tlsMode"][value="${mode}"]`);
+  if (radio) radio.checked = true;
+  updateTLS();
 }
 
 function readForm() {
   const cfg = {};
   TEXT_FIELDS.forEach((f) => { const el = form()[f]; if (el) cfg[f] = el.value.trim(); });
   cfg.architectures = $$('input[name="arch"]:checked').map((c) => c.value);
-  cfg.selfSignedCA = $('input[name="selfSignedCA"]').checked;
+  const sel = $('input[name="tlsMode"]:checked');
+  cfg.tlsMode = sel ? sel.value : "none";
   return cfg;
+}
+
+// Show the CA cert fields only when a cert mode is selected, and adapt the hint.
+function updateTLS() {
+  const sel = $('input[name="tlsMode"]:checked');
+  const mode = sel ? sel.value : "none";
+  const custom = mode === "self-signed" || mode === "custom-ca";
+  $("#ca-fields").classList.toggle("hidden", !custom);
+  if (custom) $("#ca-hint").textContent = CA_HINTS[mode] || "";
 }
 
 const form = () => document.forms["cfg-form"] || $("#cfg-form");
@@ -141,6 +159,7 @@ function updateDerived() {
 function wireForm() {
   form().registryHost.addEventListener("input", updateDerived);
   form().registryProject.addEventListener("input", updateDerived);
+  $$('input[name="tlsMode"]').forEach((r) => r.addEventListener("change", updateTLS));
   $("#cfg-form").addEventListener("submit", onGenerate);
 }
 

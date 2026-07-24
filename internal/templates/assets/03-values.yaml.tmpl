@@ -8,13 +8,19 @@ controller:
   templatesRepoURL: "{{.ChartsRepoURL}}"
   globalRegistry: "{{.Registry}}"
   globalK0sURL: "{{.FileserverURL}}"
-{{- if .SelfSignedCA}}
-  # k0s binary is served over HTTPS with a self-signed CA. This secret must
-  # contain the CA certificate (see the RUNBOOK for how to create it).
-  k0sURLCertSecret: "{{.CACertSecretName}}"
-  # Registry served with a self-signed cert: reference the CA secret so the
-  # controller trusts it.
+{{- if .UsesCustomTLS}}
+  # TLS mode: {{.TLSModeLabel}}.
+  # The controller trusts the registry via a secret containing ca.crt. That
+  # secret ({{.CACertSecretName}}) is created before install (see 04-install.sh
+  # and the RUNBOOK).
   registryCertSecret: "{{.CACertSecretName}}"
+{{- if .FileserverIsHTTPS}}
+  # k0s binary fileserver is HTTPS with the same CA, so it needs the secret too.
+  k0sURLCertSecret: "{{.CACertSecretName}}"
+{{- else}}
+  # k0s fileserver URL is plain HTTP, so no k0sURLCertSecret is set. If you move
+  # the fileserver to HTTPS, set fileserverURL to https:// and regenerate.
+{{- end}}
 {{- end}}
 
 # Component subchart overrides so every dependency pulls from the private

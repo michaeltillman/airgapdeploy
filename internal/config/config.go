@@ -58,10 +58,21 @@ type Config struct {
 	BundleBaseURL string `yaml:"bundleBaseURL" json:"bundleBaseURL"`
 	OutputDir     string `yaml:"outputDir" json:"outputDir"`
 
-	// TLS
-	SelfSignedCA     bool   `yaml:"selfSignedCA" json:"selfSignedCA"`
+	// TLS. TLSMode selects how the registry/fileserver certificates are trusted:
+	// "none" (plain HTTP or publicly-trusted), "self-signed", or "custom-ca".
+	// For the two cert modes the operator supplies a cert file at CACertPath;
+	// the generated artifacts create CACertSecretName from it before install.
+	TLSMode          string `yaml:"tlsMode" json:"tlsMode"`
+	CACertPath       string `yaml:"caCertPath" json:"caCertPath"`
 	CACertSecretName string `yaml:"caCertSecretName" json:"caCertSecretName"`
 }
+
+// TLS modes.
+const (
+	TLSNone       = "none"
+	TLSSelfSigned = "self-signed"
+	TLSCustomCA   = "custom-ca"
+)
 
 // Default returns a Config populated with sensible airgap defaults.
 func Default() *Config {
@@ -81,8 +92,33 @@ func Default() *Config {
 		Namespace:           DefaultNamespace,
 		BundleBaseURL:       DefaultBundleBaseURL,
 		OutputDir:           DefaultOutputDir,
-		SelfSignedCA:        false,
+		TLSMode:             TLSNone,
+		CACertPath:          "./ca.crt",
 		CACertSecretName:    "registry-ca-cert",
+	}
+}
+
+// UsesCustomTLS reports whether a CA certificate secret must be created and
+// referenced (true for both self-signed and custom-ca modes).
+func (c *Config) UsesCustomTLS() bool {
+	return c.TLSMode == TLSSelfSigned || c.TLSMode == TLSCustomCA
+}
+
+// FileserverIsHTTPS reports whether the k0s fileserver URL uses HTTPS, in which
+// case the k0s download also needs the CA secret.
+func (c *Config) FileserverIsHTTPS() bool {
+	return strings.HasPrefix(c.FileserverURL, "https://")
+}
+
+// TLSModeLabel returns a human-readable description of the configured TLS mode.
+func (c *Config) TLSModeLabel() string {
+	switch c.TLSMode {
+	case TLSSelfSigned:
+		return "self-signed certificate"
+	case TLSCustomCA:
+		return "certificate signed by a custom/internal CA"
+	default:
+		return "no custom CA (plain HTTP or publicly-trusted TLS)"
 	}
 }
 
@@ -177,8 +213,18 @@ func (c *Config) Validate() error {
 	if strings.TrimSpace(c.OutputDir) == "" {
 		return fmt.Errorf("outputDir must not be empty")
 	}
-	if c.SelfSignedCA && strings.TrimSpace(c.CACertSecretName) == "" {
-		return fmt.Errorf("caCertSecretName is required when selfSignedCA is enabled")
+	switch c.TLSMode {
+	case TLSNone, TLSSelfSigned, TLSCustomCA:
+	default:
+		return fmt.Errorf("tlsMode %q must be one of none, self-signed, custom-ca", c.TLSMode)
+	}
+	if c.UsesCustomTLS() {
+		if strings.TrimSpace(c.CACertSecretName) == "" {
+			return fmt.Errorf("caCertSecretName is required for tlsMode %q", c.TLSMode)
+		}
+		if strings.TrimSpace(c.CACertPath) == "" {
+			return fmt.Errorf("caCertPath is required for tlsMode %q", c.TLSMode)
+		}
 	}
 	return nil
 }
@@ -240,6 +286,12 @@ func (c *Config) Normalize() {
 	}
 	if len(c.Architectures) == 0 {
 		c.Architectures = d.Architectures
+	}
+	if strings.TrimSpace(c.TLSMode) == "" {
+		c.TLSMode = TLSNone
+	}
+	if c.CACertPath == "" {
+		c.CACertPath = d.CACertPath
 	}
 	if c.CACertSecretName == "" {
 		c.CACertSecretName = d.CACertSecretName

@@ -55,6 +55,55 @@ func TestValidateRejectsBadInput(t *testing.T) {
 	}
 }
 
+func TestTLSModes(t *testing.T) {
+	// Default is "none" and needs no CA fields.
+	c := Default()
+	c.Normalize()
+	if c.UsesCustomTLS() {
+		t.Error("default TLSMode should not use custom TLS")
+	}
+
+	// Cert modes require a CA secret name + path (both defaulted by Normalize).
+	for _, mode := range []string{TLSSelfSigned, TLSCustomCA} {
+		c := Default()
+		c.TLSMode = mode
+		c.Normalize()
+		if !c.UsesCustomTLS() {
+			t.Errorf("%s should use custom TLS", mode)
+		}
+		if err := c.Validate(); err != nil {
+			t.Errorf("%s with defaults should validate: %v", mode, err)
+		}
+		// Blank secret name must fail (test before Normalize refills it).
+		bad := Default()
+		bad.TLSMode = mode
+		bad.CACertSecretName = ""
+		if err := bad.Validate(); err == nil {
+			t.Errorf("%s with empty CACertSecretName should fail validation", mode)
+		}
+	}
+
+	// Unknown mode is rejected.
+	c = Default()
+	c.TLSMode = "mtls"
+	c.Normalize()
+	if err := c.Validate(); err == nil {
+		t.Error("unknown TLSMode should fail validation")
+	}
+}
+
+func TestFileserverIsHTTPS(t *testing.T) {
+	c := Default()
+	c.FileserverURL = "https://files.corp/kre"
+	if !c.FileserverIsHTTPS() {
+		t.Error("https URL should report HTTPS")
+	}
+	c.FileserverURL = "http://files.corp/kre"
+	if c.FileserverIsHTTPS() {
+		t.Error("http URL should not report HTTPS")
+	}
+}
+
 func TestNormalizeFillsDefaults(t *testing.T) {
 	c := &Config{
 		KcmVersion:    "1.4.0",
