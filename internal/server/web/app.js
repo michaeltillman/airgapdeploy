@@ -102,10 +102,7 @@ function buildNav() {
     b.className = "nav-item";
     b.dataset.id = p.id;
     b.innerHTML = `<span class="num">${i === 0 ? "⚙" : i}</span><span>${p.label}</span>`;
-    b.addEventListener("click", () => {
-      if (p.id !== "configure" && !state.generated) return;
-      show(p.id);
-    });
+    b.addEventListener("click", () => show(p.id));
     nav.appendChild(b);
   });
 }
@@ -114,7 +111,8 @@ function refreshNav() {
   $$(".nav-item").forEach((b) => {
     const id = b.dataset.id;
     b.classList.toggle("active", id === state.active);
-    b.classList.toggle("locked", id !== "configure" && !state.generated);
+    // Tabs are always navigable; mark not-yet-generated ones as pending.
+    b.classList.toggle("pending", id !== "configure" && !state.generated);
   });
 }
 
@@ -217,6 +215,20 @@ async function renderPhase(phase) {
     p.className = "lead";
     p.textContent = phase.intro;
     panel.appendChild(p);
+  }
+
+  // Phases show generated files; if nothing has been generated yet, prompt.
+  if (!state.generated) {
+    const c = callout("Fill in the Configure step and click “Generate artifacts” — " +
+      "this step’s files and commands will then appear here.", false);
+    const link = document.createElement("button");
+    link.className = "linkish";
+    link.textContent = "Go to Configure";
+    link.addEventListener("click", () => show("configure"));
+    c.appendChild(document.createElement("br"));
+    c.appendChild(link);
+    panel.appendChild(c);
+    return;
   }
 
   if (phase.id === "prep") {
