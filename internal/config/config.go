@@ -243,6 +243,104 @@ func validateURL(raw, field string) error {
 	return nil
 }
 
+var quantityRe = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|K|M|G|T|P)?$`)
+
+// ValidateAll checks every field and returns a map of field name -> human-readable
+// error message for all problems found (not just the first). An empty map means
+// the config is valid. Field names match the JSON/form field names so the UI can
+// highlight the offending input.
+func (c *Config) ValidateAll() map[string]string {
+	e := map[string]string{}
+
+	if strings.TrimSpace(c.KcmVersion) == "" {
+		e["kcmVersion"] = "k0rdent Enterprise version is required (e.g. 1.4.0)"
+	} else if !versionRe.MatchString(c.KcmVersion) {
+		e["kcmVersion"] = fmt.Sprintf("%q is not a valid version (expected e.g. 1.4.0)", c.KcmVersion)
+	}
+
+	if strings.TrimSpace(c.K0sVersion) == "" {
+		e["k0sVersion"] = "k0s version is required (e.g. v1.35.4+k0s.0)"
+	} else if !strings.HasPrefix(c.K0sVersion, "v") {
+		e["k0sVersion"] = fmt.Sprintf("%q must look like v1.35.4+k0s.0", c.K0sVersion)
+	}
+
+	if len(c.Architectures) == 0 {
+		e["architectures"] = "select at least one architecture"
+	} else {
+		for _, a := range c.Architectures {
+			if a != "amd64" && a != "arm64" {
+				e["architectures"] = fmt.Sprintf("unsupported architecture %q (amd64 or arm64)", a)
+			}
+		}
+	}
+
+	if strings.TrimSpace(c.RegistryHost) == "" {
+		e["registryHost"] = "registry host is required (e.g. registry.local)"
+	} else if !hostRe.MatchString(c.RegistryHost) {
+		e["registryHost"] = fmt.Sprintf("%q is not a valid host[:port]", c.RegistryHost)
+	}
+
+	if strings.TrimSpace(c.RegistryProject) == "" {
+		e["registryProject"] = "registry project/path is required"
+	}
+
+	if strings.TrimSpace(c.FileserverURL) == "" {
+		e["fileserverURL"] = "fileserver URL is required (e.g. http://binary.local/k0rdent-enterprise)"
+	} else if err := validateURL(c.FileserverURL, "fileserverURL"); err != nil {
+		e["fileserverURL"] = shortURLErr(c.FileserverURL)
+	}
+
+	if strings.TrimSpace(c.BundleBaseURL) == "" {
+		e["bundleBaseURL"] = "bundle base URL is required"
+	} else if err := validateURL(c.BundleBaseURL, "bundleBaseURL"); err != nil {
+		e["bundleBaseURL"] = shortURLErr(c.BundleBaseURL)
+	}
+
+	if !dnsLabel.MatchString(c.Namespace) {
+		e["namespace"] = fmt.Sprintf("%q is not a valid namespace (lowercase DNS label)", c.Namespace)
+	}
+	if !dnsLabel.MatchString(c.FileserverNamespace) {
+		e["fileserverNamespace"] = fmt.Sprintf("%q is not a valid namespace (lowercase DNS label)", c.FileserverNamespace)
+	}
+
+	if strings.TrimSpace(c.OutputDir) == "" {
+		e["outputDir"] = "output directory is required"
+	}
+
+	if c.PVCSize != "" && !quantityRe.MatchString(c.PVCSize) {
+		e["pvcSize"] = fmt.Sprintf("%q is not a valid size (e.g. 10Gi)", c.PVCSize)
+	}
+
+	switch c.TLSMode {
+	case TLSNone, TLSSelfSigned, TLSCustomCA:
+	default:
+		e["tlsMode"] = fmt.Sprintf("%q must be none, self-signed, or custom-ca", c.TLSMode)
+	}
+	if c.UsesCustomTLS() {
+		if strings.TrimSpace(c.CACertPath) == "" {
+			e["caCertPath"] = "certificate file path is required for this TLS mode"
+		}
+		if strings.TrimSpace(c.CACertSecretName) == "" {
+			e["caCertSecretName"] = "CA secret name is required for this TLS mode"
+		} else if !dnsLabel.MatchString(c.CACertSecretName) {
+			e["caCertSecretName"] = fmt.Sprintf("%q is not a valid secret name (lowercase DNS label)", c.CACertSecretName)
+		}
+	}
+
+	return e
+}
+
+func shortURLErr(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return fmt.Sprintf("%q is not a valid URL", raw)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Sprintf("%q must start with http:// or https://", raw)
+	}
+	return fmt.Sprintf("%q is not a valid URL", raw)
+}
+
 // Normalize trims whitespace and applies defaults for any empty optional fields.
 // It is called before validation so partially-filled configs behave predictably.
 func (c *Config) Normalize() {

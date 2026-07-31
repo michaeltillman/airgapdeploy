@@ -55,7 +55,7 @@
             <label>skopeo version (bundled image)
               <input name="skopeoVersion"></label>
             <label>Architectures
-              <span class="checks">
+              <span class="checks" id="arch-group">
                 <label class="chk"><input type="checkbox" name="arch" value="amd64"> amd64</label>
                 <label class="chk"><input type="checkbox" name="arch" value="arm64"> arm64</label>
               </span>
@@ -118,8 +118,10 @@
 
           <div class="actions">
             <button type="submit" class="primary" id="generate-btn">Generate artifacts</button>
+            <button type="button" class="secondary" id="check-btn">Validate &amp; test access</button>
             <span class="status" id="gen-status"></span>
           </div>
+          <div id="check-panel" class="check-panel hidden"></div>
         </form>
       </section>
 

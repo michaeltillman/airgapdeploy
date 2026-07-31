@@ -52,7 +52,12 @@ go build ./...      # works with no network access
 ./bin/airgapdeploy --out ./out     # choose the artifacts output directory
 ```
 
-Then open the printed URL and fill in the **Configure** screen.
+Then open the printed URL and fill in the **Configure** screen. Use
+**Validate & test access** there to check every field for errors *and* actively
+probe the targets from this machine — registry reachability + TLS trust against
+your CA, whether the specified version's bundle exists upstream, the k0s
+fileserver, and Kubernetes cluster access — with a per-field reason for anything
+that fails.
 
 - **Generator mode** (default): safe to run anywhere. Produces artifacts you run
   yourself. Ideal when handing the repo to a customer.

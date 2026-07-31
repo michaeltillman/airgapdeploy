@@ -42,6 +42,8 @@ func (s *Server) Handler() http.Handler {
 
 	// JSON / SSE API.
 	mux.HandleFunc("/api/config", s.handleConfig)
+	mux.HandleFunc("/api/validate", s.handleValidate)
+	mux.HandleFunc("/api/check", s.handleCheck)
 	mux.HandleFunc("/api/generate", s.handleGenerate)
 	mux.HandleFunc("/api/file", s.handleFile)
 	mux.HandleFunc("/api/preflight", s.handlePreflight)

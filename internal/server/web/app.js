@@ -175,7 +175,48 @@ function wireForm() {
   form().registryHost.addEventListener("input", updateDerived);
   form().registryProject.addEventListener("input", updateDerived);
   $$('input[name="tlsMode"]').forEach((r) => r.addEventListener("change", updateTLS));
+  // Clear a field's error the moment the user edits it.
+  form().querySelectorAll("input").forEach((el) =>
+    el.addEventListener("input", () => clearFieldError(el.name)));
   $("#cfg-form").addEventListener("submit", onGenerate);
+  $("#check-btn").addEventListener("click", onValidateAndCheck);
+}
+
+// ---- Per-field validation display ------------------------------------------
+function anchorFor(key) {
+  if (key === "architectures") return $("#arch-group");
+  if (key === "tlsMode") return $("#tls-mode");
+  return $(`input[name="${key}"]`);
+}
+
+function clearFieldErrors() {
+  $$(".field-err").forEach((el) => el.remove());
+  $$(".invalid").forEach((el) => el.classList.remove("invalid"));
+}
+
+function clearFieldError(key) {
+  const a = anchorFor(key);
+  if (!a) return;
+  a.classList.remove("invalid");
+  const next = a.nextElementSibling;
+  if (next && next.classList.contains("field-err")) next.remove();
+}
+
+function showFieldErrors(fields) {
+  clearFieldErrors();
+  const keys = Object.keys(fields);
+  keys.forEach((key) => {
+    const a = anchorFor(key);
+    if (!a) return;
+    a.classList.add("invalid");
+    if (!(a.nextElementSibling && a.nextElementSibling.classList.contains("field-err"))) {
+      const err = document.createElement("span");
+      err.className = "field-err";
+      err.textContent = fields[key];
+      a.insertAdjacentElement("afterend", err);
+    }
+  });
+  return keys.length;
 }
 
 // ---- Generate --------------------------------------------------------------
@@ -185,8 +226,20 @@ async function onGenerate(e) {
   const status = $("#gen-status");
   btn.disabled = true;
   status.className = "status";
-  status.textContent = "Generating…";
+  status.textContent = "Validating…";
+  clearFieldErrors();
   try {
+    // Static validation first so problems surface per-field, not as one string.
+    const v = await postJSON("/api/validate", readForm());
+    if (!v.ok) {
+      const n = showFieldErrors(v.fields);
+      status.className = "status err";
+      status.textContent = `✗ Fix ${n} field${n === 1 ? "" : "s"} highlighted above`;
+      const firstBad = anchorFor(Object.keys(v.fields)[0]);
+      if (firstBad && firstBad.scrollIntoView) firstBad.scrollIntoView({ block: "center" });
+      return;
+    }
+    status.textContent = "Generating…";
     const res = await postJSON("/api/generate", readForm());
     state.generated = true;
     status.className = "status ok";
@@ -198,6 +251,79 @@ async function onGenerate(e) {
   } finally {
     btn.disabled = false;
   }
+}
+
+// ---- Validate & test access ------------------------------------------------
+async function onValidateAndCheck() {
+  const btn = $("#check-btn");
+  const panel = $("#check-panel");
+  const status = $("#gen-status");
+  btn.disabled = true;
+  clearFieldErrors();
+  panel.classList.remove("hidden");
+  panel.innerHTML = '<div class="check-head">Validating fields…</div>';
+  status.textContent = "";
+  status.className = "status";
+  try {
+    const v = await postJSON("/api/validate", readForm());
+    if (!v.ok) {
+      const n = showFieldErrors(v.fields);
+      panel.innerHTML = `<div class="check-head err">✗ ${n} field${n === 1 ? "" : "s"} need fixing before testing access.</div>`;
+      const firstBad = anchorFor(Object.keys(v.fields)[0]);
+      if (firstBad && firstBad.scrollIntoView) firstBad.scrollIntoView({ block: "center" });
+      return;
+    }
+    panel.innerHTML = '<div class="check-head">Testing access to targets…</div>';
+    const res = await postJSON("/api/check", readForm());
+    renderChecks(res.results || []);
+  } catch (err) {
+    panel.innerHTML = `<div class="check-head err">✗ ${err.message}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+const CHECK_ICON = { pass: "✓", fail: "✗", warn: "!", skip: "–" };
+
+function renderChecks(results) {
+  const panel = $("#check-panel");
+  const counts = { pass: 0, fail: 0, warn: 0, skip: 0 };
+  results.forEach((r) => { counts[r.status] = (counts[r.status] || 0) + 1; });
+
+  // Highlight fields tied to hard failures.
+  results.forEach((r) => {
+    if (r.status === "fail" && r.field) {
+      const a = anchorFor(r.field);
+      if (a && !a.classList.contains("invalid")) {
+        a.classList.add("invalid");
+        if (!(a.nextElementSibling && a.nextElementSibling.classList.contains("field-err"))) {
+          const err = document.createElement("span");
+          err.className = "field-err";
+          err.textContent = r.detail;
+          a.insertAdjacentElement("afterend", err);
+        }
+      }
+    }
+  });
+
+  const head = counts.fail
+    ? `<div class="check-head err">✗ ${counts.fail} target check${counts.fail === 1 ? "" : "s"} failed</div>`
+    : counts.warn
+    ? `<div class="check-head warn">⚠ Reachable with ${counts.warn} warning${counts.warn === 1 ? "" : "s"}</div>`
+    : `<div class="check-head ok">✓ All target checks passed</div>`;
+
+  const rows = results.map((r) =>
+    `<div class="check-row ${r.status}">
+       <span class="cdot ${r.status}">${CHECK_ICON[r.status] || "?"}</span>
+       <span class="clabel">${escapeHtml(r.label)}</span>
+       <span class="cdetail">${escapeHtml(r.detail)}</span>
+     </div>`).join("");
+
+  panel.innerHTML = head + rows;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 // ---- Phase rendering -------------------------------------------------------

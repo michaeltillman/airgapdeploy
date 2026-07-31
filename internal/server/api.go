@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/michaeltillman/airgapdeploy/internal/checks"
 	"github.com/michaeltillman/airgapdeploy/internal/config"
 	"github.com/michaeltillman/airgapdeploy/internal/generate"
 	"github.com/michaeltillman/airgapdeploy/internal/runner"
@@ -81,6 +82,41 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	s.run = runner.New(cfg.OutputDir)
 	s.mu.Unlock()
 	writeJSON(w, http.StatusOK, res)
+}
+
+// handleValidate runs per-field static validation and returns all problems.
+func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	cfg, err := decodeConfig(r)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	fields := cfg.ValidateAll()
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"ok":     len(fields) == 0,
+		"fields": fields,
+	})
+}
+
+// handleCheck actively probes the deployment targets (registry, cluster,
+// fileserver, version) from this machine and returns per-target results.
+func (s *Server) handleCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	cfg, err := decodeConfig(r)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"results": checks.Run(cfg),
+	})
 }
 
 // handleFile returns the content of a generated file for display in the UI.

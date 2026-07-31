@@ -92,6 +92,40 @@ func TestTLSModes(t *testing.T) {
 	}
 }
 
+func TestValidateAll(t *testing.T) {
+	// A normalized default config has no field errors.
+	c := Default()
+	c.Normalize()
+	if got := c.ValidateAll(); len(got) != 0 {
+		t.Fatalf("default should have no field errors, got %v", got)
+	}
+
+	// Multiple simultaneous problems should all be reported, keyed by field.
+	bad := Default()
+	bad.KcmVersion = "latest"
+	bad.RegistryHost = ""
+	bad.FileserverURL = "ftp://x"
+	bad.Namespace = "BAD"
+	bad.PVCSize = "10gigs"
+	bad.Normalize()
+	got := bad.ValidateAll()
+	// Note: caCertPath is not asserted here — Normalize backfills it to ./ca.crt,
+	// so a missing cert surfaces via the checks package (checkCACert), not here.
+	for _, key := range []string{"kcmVersion", "registryHost", "fileserverURL", "namespace", "pvcSize"} {
+		if _, ok := got[key]; !ok {
+			t.Errorf("expected error for field %q, got keys %v", key, keysOf(got))
+		}
+	}
+}
+
+func keysOf(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
 func TestFileserverIsHTTPS(t *testing.T) {
 	c := Default()
 	c.FileserverURL = "https://files.corp/kre"
