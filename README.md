@@ -13,6 +13,10 @@ installation**. It serves a guided web UI that:
 It follows the Mirantis airgap procedure:
 <https://docs.mirantis.com/k0rdent-enterprise/latest/admin/installation/airgap/airgap-install/>
 
+📚 **Full documentation library:** [`docs/`](docs/README.md) — overview,
+architecture, complete build history, decision log, feature catalog, verification
+log, changelog, and delivery/usage guide.
+
 The generator is the source of truth — every "Run" button in live mode executes
 a file you can read first. Nothing is hidden.
 
