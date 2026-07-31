@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -41,13 +42,26 @@ type Result struct {
 // results in a stable order.
 func Run(cfg *config.Config) []Result {
 	jobs := []func(*config.Config) Result{}
+	jobs = append(jobs, checkOutputDir)
 	if cfg.UsesCustomTLS() {
 		jobs = append(jobs, checkCACert)
 	}
 	if cfg.UsesACME() {
 		jobs = append(jobs, checkACME)
+		if cfg.ACMEIngressClass != "" {
+			jobs = append(jobs, checkIngressClass)
+		}
 	}
-	jobs = append(jobs, checkRegistry, checkRegistryImages, checkVersionAvailable, checkFileserver, checkCluster)
+	jobs = append(jobs,
+		checkRegistry,
+		checkNginxImage,
+		checkBusyboxImage,
+		checkVersionAvailable,
+		checkK0sBinaries,
+		checkFileserver,
+		checkStorageClass,
+		checkCluster,
+	)
 
 	out := make([]Result, len(jobs))
 	var wg sync.WaitGroup
@@ -172,33 +186,180 @@ func checkRegistry(cfg *config.Config) Result {
 	return r
 }
 
-func checkRegistryImages(cfg *config.Config) Result {
-	r := Result{ID: "registry-images", Label: "Mirrored images present", Field: "registryProject"}
+// splitImageTag splits "name:tag" into its parts (tag empty if none).
+func splitImageTag(ref string) (name, tag string) {
+	if i := strings.LastIndexByte(ref, ':'); i >= 0 && !strings.Contains(ref[i:], "/") {
+		return ref[:i], ref[i+1:]
+	}
+	return ref, ""
+}
+
+func registryClient(cfg *config.Config) (*http.Client, error) {
 	caPath, insecure := "", true
 	if cfg.UsesCustomTLS() {
 		caPath, insecure = cfg.CACertPath, false
 	} else if cfg.UsesACME() {
 		insecure = false
 	}
-	client, err := httpClient(caPath, insecure)
+	return httpClient(caPath, insecure)
+}
+
+// checkImageTag verifies that a specific image tag exists in the registry.
+func checkImageTag(cfg *config.Config, id, label, field, repo, tag string) Result {
+	r := Result{ID: id, Label: label, Field: field}
+	client, err := registryClient(cfg)
 	if err != nil {
 		r.Status, r.Detail = Skip, err.Error()
 		return r
 	}
 	_, hp := hostPort(cfg.RegistryHost, true)
-	repo := cfg.RegistryProject + "/busybox"
 	resp, err := client.Get("https://" + hp + "/v2/" + repo + "/tags/list")
 	if err != nil {
 		r.Status, r.Detail = Warn, fmt.Sprintf("could not query %s: %v", repo, err)
 		return r
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == 200 {
-		r.Status, r.Detail = Pass, "images appear mirrored (found "+repo+")"
-	} else {
+	if resp.StatusCode != 200 {
 		r.Status, r.Detail = Warn, fmt.Sprintf("%s not found (HTTP %d) — run 01-prepare.sh to push images", repo, resp.StatusCode)
+		return r
+	}
+	var body struct {
+		Tags []string `json:"tags"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&body)
+	for _, t := range body.Tags {
+		if t == tag {
+			r.Status, r.Detail = Pass, fmt.Sprintf("%s:%s present in the registry", repo, tag)
+			return r
+		}
+	}
+	r.Status, r.Detail = Warn, fmt.Sprintf("%s exists but tag %q is missing — check the image version", repo, tag)
+	return r
+}
+
+func checkNginxImage(cfg *config.Config) Result {
+	name, tag := splitImageTag(cfg.NginxImage) // served from the registry root
+	return checkImageTag(cfg, "img-nginx", "nginx image present", "nginxImage", name, tag)
+}
+
+func checkBusyboxImage(cfg *config.Config) Result {
+	name, tag := splitImageTag(cfg.BusyboxImage) // lives under the project
+	return checkImageTag(cfg, "img-busybox", "busybox image present", "busyboxImage", cfg.RegistryProject+"/"+name, tag)
+}
+
+func checkK0sBinaries(cfg *config.Config) Result {
+	r := Result{ID: "k0s", Label: "k0s binaries available", Field: "k0sVersion"}
+	client := &http.Client{Timeout: 7 * time.Second}
+	var missing, unreachable []string
+	for _, arch := range cfg.Architectures {
+		url := fmt.Sprintf("%s/k0s/%s", cfg.BundleBaseURL, cfg.K0sBinaryName(arch))
+		req, _ := http.NewRequest(http.MethodHead, url, nil)
+		resp, err := client.Do(req)
+		if err != nil {
+			unreachable = append(unreachable, arch)
+			continue
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			missing = append(missing, arch)
+		}
+	}
+	switch {
+	case len(missing) > 0:
+		r.Status, r.Detail = Fail, fmt.Sprintf("no k0s %s binary for arch(s) %s (check the k0s version)", cfg.K0sVersion, strings.Join(missing, ", "))
+	case len(unreachable) > 0:
+		r.Status, r.Detail = Warn, fmt.Sprintf("could not reach %s to verify k0s binaries (offline?)", cfg.BundleBaseURL)
+	default:
+		r.Status, r.Detail = Pass, fmt.Sprintf("k0s %s available for %s", cfg.K0sVersion, strings.Join(cfg.Architectures, ", "))
 	}
 	return r
+}
+
+func checkOutputDir(cfg *config.Config) Result {
+	r := Result{ID: "outputdir", Label: "Output directory writable", Field: "outputDir"}
+	if err := os.MkdirAll(cfg.OutputDir, 0o755); err != nil {
+		r.Status, r.Detail = Fail, fmt.Sprintf("cannot create %s: %v", cfg.OutputDir, err)
+		return r
+	}
+	f, err := os.CreateTemp(cfg.OutputDir, ".airgapdeploy-write-*")
+	if err != nil {
+		r.Status, r.Detail = Fail, fmt.Sprintf("%s is not writable: %v", cfg.OutputDir, err)
+		return r
+	}
+	name := f.Name()
+	_ = f.Close()
+	_ = os.Remove(name)
+	r.Status, r.Detail = Pass, "artifacts can be written to "+cfg.OutputDir
+	return r
+}
+
+func checkStorageClass(cfg *config.Config) Result {
+	r := Result{ID: "storageclass", Label: "StorageClass available", Field: "storageClass"}
+	if !kubectlAvailable() {
+		r.Status, r.Detail = Skip, "kubectl not found; cannot verify the StorageClass"
+		return r
+	}
+	if cfg.StorageClass != "" {
+		out, err := kubectlRun("get", "storageclass", cfg.StorageClass)
+		switch {
+		case err == nil:
+			r.Status, r.Detail = Pass, fmt.Sprintf("StorageClass %q exists", cfg.StorageClass)
+		case kubectlNotFound(out):
+			r.Status, r.Detail = Fail, fmt.Sprintf("StorageClass %q does not exist in the cluster", cfg.StorageClass)
+		default:
+			r.Status, r.Detail = Warn, fmt.Sprintf("could not verify StorageClass %q (cluster unreachable?): %s", cfg.StorageClass, firstLine(out))
+		}
+		return r
+	}
+	// No class pinned: confirm the cluster has at least one (default) class.
+	out, err := kubectlRun("get", "storageclass", "-o", "name")
+	if err != nil {
+		r.Status, r.Detail = Warn, "could not list StorageClasses: "+firstLine(out)
+		return r
+	}
+	if strings.TrimSpace(out) == "" {
+		r.Status, r.Detail = Warn, "no StorageClass in the cluster — the fileserver PVC will stay Pending"
+	} else {
+		r.Status, r.Detail = Pass, "cluster has a StorageClass (using the default)"
+	}
+	return r
+}
+
+func checkIngressClass(cfg *config.Config) Result {
+	r := Result{ID: "ingressclass", Label: "Ingress class available", Field: "acmeIngressClass"}
+	if !kubectlAvailable() {
+		r.Status, r.Detail = Skip, "kubectl not found; cannot verify the ingress class"
+		return r
+	}
+	out, err := kubectlRun("get", "ingressclass", cfg.ACMEIngressClass)
+	switch {
+	case err == nil:
+		r.Status, r.Detail = Pass, fmt.Sprintf("ingressclass %q exists", cfg.ACMEIngressClass)
+	case kubectlNotFound(out):
+		r.Status, r.Detail = Fail, fmt.Sprintf("ingressclass %q does not exist (needed for the ACME HTTP-01 solver)", cfg.ACMEIngressClass)
+	default:
+		r.Status, r.Detail = Warn, fmt.Sprintf("could not verify ingressclass %q (cluster unreachable?): %s", cfg.ACMEIngressClass, firstLine(out))
+	}
+	return r
+}
+
+func kubectlNotFound(out string) bool {
+	l := strings.ToLower(out)
+	return strings.Contains(l, "notfound") || strings.Contains(l, "not found")
+}
+
+func kubectlAvailable() bool {
+	_, err := exec.LookPath("kubectl")
+	return err == nil
+}
+
+func kubectlRun(args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	full := append([]string{}, args...)
+	full = append(full, "--request-timeout=6s")
+	b, err := exec.CommandContext(ctx, "kubectl", full...).CombinedOutput()
+	return string(b), err
 }
 
 func checkVersionAvailable(cfg *config.Config) Result {

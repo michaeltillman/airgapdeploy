@@ -81,6 +81,36 @@ func TestCheckRegistryReachable(t *testing.T) {
 	}
 }
 
+func TestSplitImageTag(t *testing.T) {
+	cases := map[string][2]string{
+		"nginx:1.30.2":   {"nginx", "1.30.2"},
+		"busybox:1.36.1": {"busybox", "1.36.1"},
+		"nginx":          {"nginx", ""},
+		"repo/img:v2":    {"repo/img", "v2"},
+	}
+	for in, want := range cases {
+		n, tg := splitImageTag(in)
+		if n != want[0] || tg != want[1] {
+			t.Errorf("splitImageTag(%q) = %q,%q want %q,%q", in, n, tg, want[0], want[1])
+		}
+	}
+}
+
+func TestCheckOutputDir(t *testing.T) {
+	cfg := config.Default()
+	cfg.OutputDir = filepath.Join(t.TempDir(), "nested", "out")
+	if r := checkOutputDir(cfg); r.Status != Pass {
+		t.Errorf("writable output dir should pass, got %v", r)
+	}
+	// A path under a file (not a dir) cannot be created.
+	f := filepath.Join(t.TempDir(), "afile")
+	_ = os.WriteFile(f, []byte("x"), 0o644)
+	cfg.OutputDir = filepath.Join(f, "sub")
+	if r := checkOutputDir(cfg); r.Status != Fail {
+		t.Errorf("non-creatable output dir should fail, got %v", r)
+	}
+}
+
 func TestCheckRegistryUnreachable(t *testing.T) {
 	cfg := config.Default()
 	cfg.TLSMode = config.TLSNone

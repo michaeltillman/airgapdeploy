@@ -301,7 +301,11 @@ func validateURL(raw, field string) error {
 	return nil
 }
 
-var quantityRe = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|K|M|G|T|P)?$`)
+var (
+	quantityRe = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|K|M|G|T|P)?$`)
+	imageRe    = regexp.MustCompile(`^[a-z0-9][a-z0-9._/-]*:[A-Za-z0-9][A-Za-z0-9._-]*$`)
+	k8sNameRe  = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`)
+)
 
 // ValidateAll checks every field and returns a map of field name -> human-readable
 // error message for all problems found (not just the first). An empty map means
@@ -367,6 +371,32 @@ func (c *Config) ValidateAll() map[string]string {
 
 	if c.PVCSize != "" && !quantityRe.MatchString(c.PVCSize) {
 		e["pvcSize"] = fmt.Sprintf("%q is not a valid size (e.g. 10Gi)", c.PVCSize)
+	}
+
+	if strings.TrimSpace(c.SkopeoVersion) == "" {
+		e["skopeoVersion"] = "skopeo version is required (e.g. v1.17.0)"
+	} else if !strings.HasPrefix(c.SkopeoVersion, "v") {
+		e["skopeoVersion"] = fmt.Sprintf("%q should look like v1.17.0", c.SkopeoVersion)
+	}
+
+	if strings.TrimSpace(c.NginxImage) == "" {
+		e["nginxImage"] = "nginx image is required (e.g. nginx:1.30.2)"
+	} else if !imageRe.MatchString(c.NginxImage) {
+		e["nginxImage"] = fmt.Sprintf("%q is not a valid image reference (name:tag)", c.NginxImage)
+	}
+
+	if strings.TrimSpace(c.BusyboxImage) == "" {
+		e["busyboxImage"] = "busybox image is required (e.g. busybox:1.36.1)"
+	} else if !imageRe.MatchString(c.BusyboxImage) {
+		e["busyboxImage"] = fmt.Sprintf("%q is not a valid image reference (name:tag)", c.BusyboxImage)
+	}
+
+	if c.StorageClass != "" && !k8sNameRe.MatchString(c.StorageClass) {
+		e["storageClass"] = fmt.Sprintf("%q is not a valid StorageClass name", c.StorageClass)
+	}
+
+	if c.ACMEIngressClass != "" && !k8sNameRe.MatchString(c.ACMEIngressClass) {
+		e["acmeIngressClass"] = fmt.Sprintf("%q is not a valid ingress class name", c.ACMEIngressClass)
 	}
 
 	switch c.TLSMode {
