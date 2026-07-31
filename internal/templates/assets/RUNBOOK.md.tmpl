@@ -124,6 +124,25 @@ likely causes. Re-run `./check-access.sh` to re-test registry/fileserver access.
   needed on the **prep machine** — `01-prepare.sh` mounts it into skopeo and
   pushes with TLS verification enabled (`--dest-cert-dir`), so the registry cert
   is validated against your CA rather than trusted blindly.
+{{- else if .UsesACME}}
+- **TLS (automated ACME).** Certificates are issued and renewed automatically by
+  cert-manager (installed with k0rdent), so there is no CA file to manage and no
+  `registryCertSecret` — the issued certs are publicly trusted. After the kcm
+  install (step 3), apply the issuer and certificate:
+  ```bash
+  kubectl apply -f tls-acme/clusterissuer.yaml
+  kubectl apply -f tls-acme/certificate.yaml
+  ```
+  Then point your registry / fileserver **ingress** at the `registry-serving-tls`
+  secret cert-manager produces. Issuer: `{{.ACMEIssuerName}}`, ACME server
+  `{{.ACMEServer}}`, HTTP-01 solver{{if .ACMEIngressClass}} via ingress class `{{.ACMEIngressClass}}`{{end}}.
+
+  > **AIR-GAP WARNING.** Public Let's Encrypt needs outbound reach to the ACME
+  > server AND inbound reach from it to your ingress for the HTTP-01 challenge —
+  > which a fully isolated air-gap does not have. For a true air-gap, set the
+  > ACME server to an **internal** endpoint (step-ca, Vault, or a Windows CA with
+  > the ACME role). `check-access.sh`/the Configure page will flag if the ACME
+  > server is unreachable.
 {{- else}}
 - **TLS (none).** No custom CA is configured; the registry is expected to be
   plain HTTP or to present a publicly-trusted certificate. To trust a

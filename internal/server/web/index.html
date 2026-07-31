@@ -105,6 +105,7 @@
                 <label class="chk"><input type="radio" name="tlsMode" value="none"> None <small>— plain HTTP or publicly-trusted</small></label>
                 <label class="chk"><input type="radio" name="tlsMode" value="self-signed"> Self-signed cert</label>
                 <label class="chk"><input type="radio" name="tlsMode" value="custom-ca"> Custom / internal CA</label>
+                <label class="chk"><input type="radio" name="tlsMode" value="acme"> Automated (ACME / Let's Encrypt) <small>— cert-manager issues &amp; renews</small></label>
               </span>
             </label>
             <div id="ca-fields" class="hidden">
@@ -113,6 +114,16 @@
               <p class="hint" id="ca-hint"></p>
               <label>CA cert secret name
                 <input name="caCertSecretName" placeholder="registry-ca-cert"></label>
+            </div>
+            <div id="acme-fields" class="hidden">
+              <label>ACME server URL
+                <input name="acmeServer" placeholder="https://acme-v02.api.letsencrypt.org/directory"></label>
+              <p class="hint">Let's Encrypt production by default — use the staging URL while testing, or an internal ACME endpoint (step-ca, Vault, Windows CA) for a true air-gap.</p>
+              <label>Contact email
+                <input name="acmeEmail" placeholder="ops@example.com"></label>
+              <label>Ingress class (HTTP-01 solver)
+                <input name="acmeIngressClass" placeholder="nginx"></label>
+              <p class="hint">cert-manager (installed by k0rdent) solves the HTTP-01 challenge through this ingress and auto-renews. The ACME server must be reachable from the cluster.</p>
             </div>
           </fieldset>
 

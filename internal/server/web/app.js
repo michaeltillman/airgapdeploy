@@ -129,6 +129,7 @@ const TEXT_FIELDS = [
   "kcmVersion", "k0sVersion", "skopeoVersion", "registryHost", "registryProject",
   "fileserverURL", "fileserverNamespace", "storageClass", "pvcSize", "nginxImage",
   "busyboxImage", "namespace", "bundleBaseURL", "outputDir", "caCertPath", "caCertSecretName",
+  "acmeServer", "acmeEmail", "acmeIngressClass",
 ];
 
 const CA_HINTS = {
@@ -160,6 +161,7 @@ function updateTLS() {
   const mode = sel ? sel.value : "none";
   const custom = mode === "self-signed" || mode === "custom-ca";
   $("#ca-fields").classList.toggle("hidden", !custom);
+  $("#acme-fields").classList.toggle("hidden", mode !== "acme");
   if (custom) $("#ca-hint").textContent = CA_HINTS[mode] || "";
 }
 
@@ -268,7 +270,7 @@ async function onValidateAndCheck() {
     const v = await postJSON("/api/validate", readForm());
     if (!v.ok) {
       const n = showFieldErrors(v.fields);
-      panel.innerHTML = `<div class="check-head err">✗ ${n} field${n === 1 ? "" : "s"} need fixing before testing access.</div>`;
+      panel.innerHTML = `<div class="check-head err">✗ ${n === 1 ? "1 field needs" : n + " fields need"} fixing before testing access.</div>`;
       const firstBad = anchorFor(Object.keys(v.fields)[0]);
       if (firstBad && firstBad.scrollIntoView) firstBad.scrollIntoView({ block: "center" });
       return;

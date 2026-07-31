@@ -44,6 +44,9 @@ func Run(cfg *config.Config) []Result {
 	if cfg.UsesCustomTLS() {
 		jobs = append(jobs, checkCACert)
 	}
+	if cfg.UsesACME() {
+		jobs = append(jobs, checkACME)
+	}
 	jobs = append(jobs, checkRegistry, checkRegistryImages, checkVersionAvailable, checkFileserver, checkCluster)
 
 	out := make([]Result, len(jobs))
@@ -136,6 +139,8 @@ func checkRegistry(cfg *config.Config) Result {
 	insecure := true
 	if cfg.UsesCustomTLS() {
 		caPath, insecure = cfg.CACertPath, false
+	} else if cfg.UsesACME() {
+		insecure = false // ACME certs are publicly trusted; verify with system roots
 	}
 	client, err := httpClient(caPath, insecure)
 	if err != nil {
@@ -172,6 +177,8 @@ func checkRegistryImages(cfg *config.Config) Result {
 	caPath, insecure := "", true
 	if cfg.UsesCustomTLS() {
 		caPath, insecure = cfg.CACertPath, false
+	} else if cfg.UsesACME() {
+		insecure = false
 	}
 	client, err := httpClient(caPath, insecure)
 	if err != nil {
@@ -222,6 +229,8 @@ func checkFileserver(cfg *config.Config) Result {
 	if cfg.FileserverIsHTTPS() {
 		if cfg.UsesCustomTLS() {
 			caPath = cfg.CACertPath
+		} else if cfg.UsesACME() {
+			// publicly trusted; verify with system roots
 		} else {
 			insecure = true
 		}
@@ -243,6 +252,23 @@ func checkFileserver(cfg *config.Config) Result {
 		r.Status, r.Detail = Pass, "serving the k0s binary"
 	} else {
 		r.Status, r.Detail = Warn, fmt.Sprintf("HTTP %d for the k0s binary (not uploaded/deployed yet?)", resp.StatusCode)
+	}
+	return r
+}
+
+func checkACME(cfg *config.Config) Result {
+	r := Result{ID: "acme", Label: "ACME server reachable", Field: "acmeServer"}
+	client := &http.Client{Timeout: 7 * time.Second}
+	resp, err := client.Get(cfg.ACMEServer)
+	if err != nil {
+		r.Status, r.Detail = Warn, fmt.Sprintf("could not reach %s: %v (cert-manager needs this to issue certs)", cfg.ACMEServer, err)
+		return r
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == 200 {
+		r.Status, r.Detail = Pass, "ACME directory reachable at "+cfg.ACMEServer
+	} else {
+		r.Status, r.Detail = Warn, fmt.Sprintf("ACME directory returned HTTP %d", resp.StatusCode)
 	}
 	return r
 }

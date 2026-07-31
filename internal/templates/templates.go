@@ -40,6 +40,8 @@ var templatePaths = []string{
 	"assets/03-values.yaml.tmpl",
 	"assets/04-install.sh.tmpl",
 	"assets/05-verify.sh.tmpl",
+	"assets/tls-acme/clusterissuer.yaml.tmpl",
+	"assets/tls-acme/certificate.yaml.tmpl",
 	"assets/check-access.sh.tmpl",
 	"assets/check-node-pull/namespace-daemonset.yaml.tmpl",
 	"assets/check-node-pull/run.sh.tmpl",
@@ -64,6 +66,10 @@ func Render(cfg *config.Config) ([]Artifact, error) {
 
 	artifacts := make([]Artifact, 0, len(templatePaths))
 	for _, tp := range templatePaths {
+		// The ACME cert-manager artifacts are only relevant in acme mode.
+		if strings.HasPrefix(tp, "assets/tls-acme/") && !cfg.UsesACME() {
+			continue
+		}
 		raw, err := fs.ReadFile(assetsFS, tp)
 		if err != nil {
 			return nil, fmt.Errorf("reading template %s: %w", tp, err)

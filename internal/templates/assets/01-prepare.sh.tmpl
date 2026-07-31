@@ -80,6 +80,8 @@ CERT_DIR="$(mktemp -d)"
 cp "${CA_CERT_PATH}" "${CERT_DIR}/ca.crt"
 trap 'rm -rf "${CERT_DIR}"' EXIT
 echo "==> Pushing images and charts to ${REGISTRY} (verifying against ${CA_CERT_PATH})"
+{{- else if .UsesACME}}
+echo "==> Pushing images and charts to ${REGISTRY} (verifying against public CAs)"
 {{- else}}
 echo "==> Pushing images and charts to ${REGISTRY} (TLS verification disabled)"
 {{- end}}
@@ -94,6 +96,9 @@ for file in $(find . -type f ! -name 'skopeo*' | sed -s 's~^./~~g'); do
     -v "${CERT_DIR}:/certs:ro" \
     "skopeo:${SKOPEO_VERSION}" copy -a --authfile /config.json \
     --insecure-policy --dest-tls-verify=true --dest-cert-dir /certs \
+{{- else if .UsesACME}}
+    "skopeo:${SKOPEO_VERSION}" copy -a --authfile /config.json \
+    --insecure-policy --dest-tls-verify=true \
 {{- else}}
     "skopeo:${SKOPEO_VERSION}" copy -a --authfile /config.json \
     --insecure-policy --dest-tls-verify=false \

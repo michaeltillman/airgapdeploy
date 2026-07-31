@@ -15,8 +15,15 @@ func TestRenderAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
-	if len(arts) != len(templatePaths) {
-		t.Fatalf("expected %d artifacts, got %d", len(templatePaths), len(arts))
+	// The default config is non-ACME, so the tls-acme/ templates are skipped.
+	expected := 0
+	for _, p := range templatePaths {
+		if !strings.HasPrefix(p, "assets/tls-acme/") {
+			expected++
+		}
+	}
+	if len(arts) != expected {
+		t.Fatalf("expected %d artifacts, got %d", expected, len(arts))
 	}
 	for _, a := range arts {
 		if len(a.Content) == 0 {
@@ -168,6 +175,61 @@ func TestAccessCheckTLSBranching(t *testing.T) {
 			t.Error("none mode access check should probe insecurely (-k)")
 		}
 	}
+}
+
+func TestACMEArtifacts(t *testing.T) {
+	// Non-ACME modes must NOT emit the cert-manager artifacts.
+	none := config.Default()
+	for _, a := range mustRender(t, none) {
+		if strings.HasPrefix(a.Path, "tls-acme/") {
+			t.Errorf("non-acme mode should not emit %s", a.Path)
+		}
+	}
+
+	// ACME mode emits a ClusterIssuer + Certificate wired from the config.
+	acme := config.Default()
+	acme.TLSMode = config.TLSACME
+	acme.ACMEEmail = "ops@example.com"
+	acme.RegistryHost = "registry.corp"
+	byPath := map[string]string{}
+	for _, a := range mustRender(t, acme) {
+		byPath[a.Path] = string(a.Content)
+	}
+	issuer, ok := byPath["tls-acme/clusterissuer.yaml"]
+	if !ok {
+		t.Fatal("acme mode should emit tls-acme/clusterissuer.yaml")
+	}
+	if !strings.Contains(issuer, "kind: ClusterIssuer") ||
+		!strings.Contains(issuer, "ops@example.com") ||
+		!strings.Contains(issuer, "acme-v02.api.letsencrypt.org") ||
+		!strings.Contains(issuer, "http01:") {
+		t.Errorf("ClusterIssuer missing expected ACME/http01 content:\n%s", issuer)
+	}
+	cert, ok := byPath["tls-acme/certificate.yaml"]
+	if !ok {
+		t.Fatal("acme mode should emit tls-acme/certificate.yaml")
+	}
+	if !strings.Contains(cert, "kind: Certificate") || !strings.Contains(cert, "registry.corp") {
+		t.Errorf("Certificate missing dnsNames from config:\n%s", cert)
+	}
+
+	// ACME mode is publicly trusted -> no registryCertSecret in values.
+	if strings.Contains(byPath["03-values.yaml"], "registryCertSecret:") {
+		t.Error("acme mode should not wire registryCertSecret (publicly trusted)")
+	}
+	// Prep push should verify (not disable TLS) in acme mode.
+	if !strings.Contains(byPath["01-prepare.sh"], "--dest-tls-verify=true") {
+		t.Error("acme mode push should verify TLS")
+	}
+}
+
+func mustRender(t *testing.T, c *config.Config) []Artifact {
+	t.Helper()
+	arts, err := Render(c)
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	return arts
 }
 
 func TestShScriptsMarkedExecutable(t *testing.T) {

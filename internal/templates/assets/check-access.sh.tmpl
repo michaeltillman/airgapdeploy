@@ -43,6 +43,9 @@ if [[ -f "${CA_CERT_PATH}" ]]; then
 else
   bad "CA certificate not found at ${CA_CERT_PATH} (cannot verify TLS trust)"
 fi
+{{- else if .UsesACME}}
+# ACME (publicly-trusted) certs: verify normally against the system trust store.
+CURL_TLS=()
 {{- else}}
 # TLS mode "none": no custom CA. Probe insecurely so we still get a signal.
 CURL_TLS=(-k)
@@ -96,6 +99,8 @@ FS_TLS=()
 {{- if .FileserverIsHTTPS}}
 {{- if .UsesCustomTLS}}
 [[ -f "${CA_CERT_PATH}" ]] && FS_TLS=(--cacert "${CA_CERT_PATH}")
+{{- else if .UsesACME}}
+FS_TLS=()
 {{- else}}
 FS_TLS=(-k)
 {{- end}}

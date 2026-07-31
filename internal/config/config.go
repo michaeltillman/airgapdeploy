@@ -58,13 +58,20 @@ type Config struct {
 	BundleBaseURL string `yaml:"bundleBaseURL" json:"bundleBaseURL"`
 	OutputDir     string `yaml:"outputDir" json:"outputDir"`
 
-	// TLS. TLSMode selects how the registry/fileserver certificates are trusted:
-	// "none" (plain HTTP or publicly-trusted), "self-signed", or "custom-ca".
-	// For the two cert modes the operator supplies a cert file at CACertPath;
-	// the generated artifacts create CACertSecretName from it before install.
+	// TLS. TLSMode selects how the registry/fileserver certificates are handled:
+	// "none" (plain HTTP or publicly-trusted), "self-signed", "custom-ca", or
+	// "acme" (automated issuance via cert-manager, e.g. Let's Encrypt).
+	// For the self-signed/custom-ca modes the operator supplies a cert file at
+	// CACertPath; the generated artifacts create CACertSecretName from it.
 	TLSMode          string `yaml:"tlsMode" json:"tlsMode"`
 	CACertPath       string `yaml:"caCertPath" json:"caCertPath"`
 	CACertSecretName string `yaml:"caCertSecretName" json:"caCertSecretName"`
+
+	// ACME (automated issuance) — used when TLSMode == "acme". Certs are assumed
+	// publicly trusted (Let's Encrypt); an internal ACME server URL may be set.
+	ACMEServer       string `yaml:"acmeServer" json:"acmeServer"`
+	ACMEEmail        string `yaml:"acmeEmail" json:"acmeEmail"`
+	ACMEIngressClass string `yaml:"acmeIngressClass" json:"acmeIngressClass"`
 }
 
 // TLS modes.
@@ -72,6 +79,13 @@ const (
 	TLSNone       = "none"
 	TLSSelfSigned = "self-signed"
 	TLSCustomCA   = "custom-ca"
+	TLSACME       = "acme"
+)
+
+// ACME server presets.
+const (
+	DefaultACMEServer = "https://acme-v02.api.letsencrypt.org/directory"
+	LEStagingServer   = "https://acme-staging-v02.api.letsencrypt.org/directory"
 )
 
 // Default returns a Config populated with sensible airgap defaults.
@@ -95,13 +109,47 @@ func Default() *Config {
 		TLSMode:             TLSNone,
 		CACertPath:          "./ca.crt",
 		CACertSecretName:    "registry-ca-cert",
+		ACMEServer:          DefaultACMEServer,
+		ACMEIngressClass:    "nginx",
 	}
 }
 
-// UsesCustomTLS reports whether a CA certificate secret must be created and
-// referenced (true for both self-signed and custom-ca modes).
+// UsesCustomTLS reports whether the operator supplies a CA certificate file that
+// must be turned into a secret and trusted (self-signed and custom-ca modes).
 func (c *Config) UsesCustomTLS() bool {
 	return c.TLSMode == TLSSelfSigned || c.TLSMode == TLSCustomCA
+}
+
+// UsesACME reports whether certificates are automatically issued via cert-manager.
+func (c *Config) UsesACME() bool { return c.TLSMode == TLSACME }
+
+// ACMEIssuerName is the name of the generated cert-manager ClusterIssuer.
+func (c *Config) ACMEIssuerName() string { return "airgap-acme" }
+
+// TLSDomains returns the unique hostnames a serving certificate should cover,
+// derived from the registry host and the fileserver URL.
+func (c *Config) TLSDomains() []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(h string) {
+		h = strings.TrimSpace(h)
+		if h != "" && !seen[h] {
+			seen[h] = true
+			out = append(out, h)
+		}
+	}
+	rh := c.RegistryHost
+	if i := strings.IndexByte(rh, '/'); i >= 0 {
+		rh = rh[:i]
+	}
+	if i := strings.IndexByte(rh, ':'); i >= 0 {
+		rh = rh[:i]
+	}
+	add(rh)
+	if u, err := url.Parse(c.FileserverURL); err == nil {
+		add(u.Hostname())
+	}
+	return out
 }
 
 // FileserverIsHTTPS reports whether the k0s fileserver URL uses HTTPS, in which
@@ -117,6 +165,8 @@ func (c *Config) TLSModeLabel() string {
 		return "self-signed certificate"
 	case TLSCustomCA:
 		return "certificate signed by a custom/internal CA"
+	case TLSACME:
+		return "automated ACME issuance (e.g. Let's Encrypt)"
 	default:
 		return "no custom CA (plain HTTP or publicly-trusted TLS)"
 	}
@@ -214,9 +264,9 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("outputDir must not be empty")
 	}
 	switch c.TLSMode {
-	case TLSNone, TLSSelfSigned, TLSCustomCA:
+	case TLSNone, TLSSelfSigned, TLSCustomCA, TLSACME:
 	default:
-		return fmt.Errorf("tlsMode %q must be one of none, self-signed, custom-ca", c.TLSMode)
+		return fmt.Errorf("tlsMode %q must be one of none, self-signed, custom-ca, acme", c.TLSMode)
 	}
 	if c.UsesCustomTLS() {
 		if strings.TrimSpace(c.CACertSecretName) == "" {
@@ -224,6 +274,14 @@ func (c *Config) Validate() error {
 		}
 		if strings.TrimSpace(c.CACertPath) == "" {
 			return fmt.Errorf("caCertPath is required for tlsMode %q", c.TLSMode)
+		}
+	}
+	if c.UsesACME() {
+		if err := validateURL(c.ACMEServer, "acmeServer"); err != nil {
+			return err
+		}
+		if strings.TrimSpace(c.ACMEEmail) == "" {
+			return fmt.Errorf("acmeEmail is required for ACME issuance")
 		}
 	}
 	return nil
@@ -312,9 +370,9 @@ func (c *Config) ValidateAll() map[string]string {
 	}
 
 	switch c.TLSMode {
-	case TLSNone, TLSSelfSigned, TLSCustomCA:
+	case TLSNone, TLSSelfSigned, TLSCustomCA, TLSACME:
 	default:
-		e["tlsMode"] = fmt.Sprintf("%q must be none, self-signed, or custom-ca", c.TLSMode)
+		e["tlsMode"] = fmt.Sprintf("%q must be none, self-signed, custom-ca, or acme", c.TLSMode)
 	}
 	if c.UsesCustomTLS() {
 		if strings.TrimSpace(c.CACertPath) == "" {
@@ -324,6 +382,18 @@ func (c *Config) ValidateAll() map[string]string {
 			e["caCertSecretName"] = "CA secret name is required for this TLS mode"
 		} else if !dnsLabel.MatchString(c.CACertSecretName) {
 			e["caCertSecretName"] = fmt.Sprintf("%q is not a valid secret name (lowercase DNS label)", c.CACertSecretName)
+		}
+	}
+	if c.UsesACME() {
+		if strings.TrimSpace(c.ACMEServer) == "" {
+			e["acmeServer"] = "ACME server URL is required"
+		} else if err := validateURL(c.ACMEServer, "acmeServer"); err != nil {
+			e["acmeServer"] = shortURLErr(c.ACMEServer)
+		}
+		if strings.TrimSpace(c.ACMEEmail) == "" {
+			e["acmeEmail"] = "contact email is required for ACME (e.g. Let's Encrypt)"
+		} else if !strings.Contains(c.ACMEEmail, "@") || !strings.Contains(c.ACMEEmail, ".") {
+			e["acmeEmail"] = fmt.Sprintf("%q is not a valid email address", c.ACMEEmail)
 		}
 	}
 
@@ -393,6 +463,12 @@ func (c *Config) Normalize() {
 	}
 	if c.CACertSecretName == "" {
 		c.CACertSecretName = d.CACertSecretName
+	}
+	c.ACMEServer = strings.TrimSpace(c.ACMEServer)
+	c.ACMEEmail = strings.TrimSpace(c.ACMEEmail)
+	c.ACMEIngressClass = strings.TrimSpace(c.ACMEIngressClass)
+	if c.ACMEServer == "" {
+		c.ACMEServer = d.ACMEServer
 	}
 }
 
