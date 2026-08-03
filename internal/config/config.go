@@ -72,6 +72,12 @@ type Config struct {
 	ACMEServer       string `yaml:"acmeServer" json:"acmeServer"`
 	ACMEEmail        string `yaml:"acmeEmail" json:"acmeEmail"`
 	ACMEIngressClass string `yaml:"acmeIngressClass" json:"acmeIngressClass"`
+
+	// k0rdent Enterprise UI (web console). Installed by the kcm chart by default;
+	// InstallUI toggles k0rdent-ui.enabled. UIPassword, if set, replaces the
+	// insecure default basic-auth password (the docs recommend changing it).
+	InstallUI  bool   `yaml:"installUI" json:"installUI"`
+	UIPassword string `yaml:"uiPassword" json:"uiPassword"`
 }
 
 // TLS modes.
@@ -111,8 +117,15 @@ func Default() *Config {
 		CACertSecretName:    "registry-ca-cert",
 		ACMEServer:          DefaultACMEServer,
 		ACMEIngressClass:    "nginx",
+		InstallUI:           true,
 	}
 }
+
+// UIServiceName is the k0rdent UI Service (release "kcm" + component name).
+func (c *Config) UIServiceName() string { return "kcm-k0rdent-ui" }
+
+// UIPort is the port the k0rdent UI Service listens on.
+func (c *Config) UIPort() string { return "3000" }
 
 // UsesCustomTLS reports whether the operator supplies a CA certificate file that
 // must be turned into a secret and trusted (self-signed and custom-ca modes).
@@ -500,6 +513,7 @@ func (c *Config) Normalize() {
 	if c.ACMEServer == "" {
 		c.ACMEServer = d.ACMEServer
 	}
+	c.UIPassword = strings.TrimSpace(c.UIPassword)
 }
 
 // Load reads a YAML config file, filling defaults for any omitted fields.

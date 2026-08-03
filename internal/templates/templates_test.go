@@ -232,6 +232,46 @@ func mustRender(t *testing.T, c *config.Config) []Artifact {
 	return arts
 }
 
+func TestUIToggle(t *testing.T) {
+	render := func(install bool, pw string) map[string]string {
+		c := config.Default()
+		c.InstallUI = install
+		c.UIPassword = pw
+		m := map[string]string{}
+		for _, a := range mustRender(t, c) {
+			m[a.Path] = string(a.Content)
+		}
+		return m
+	}
+
+	on := render(true, "")
+	if !strings.Contains(on["03-values.yaml"], "enabled: true") {
+		t.Error("installUI=true should set k0rdent-ui.enabled: true")
+	}
+	if !strings.Contains(on["05-verify.sh"], "port-forward") || !strings.Contains(on["05-verify.sh"], "kcm-k0rdent-ui") {
+		t.Error("installUI=true verify should probe the UI service")
+	}
+
+	off := render(false, "")
+	if !strings.Contains(off["03-values.yaml"], "enabled: false") {
+		t.Error("installUI=false should set k0rdent-ui.enabled: false")
+	}
+	if !strings.Contains(off["05-verify.sh"], "DISABLED") {
+		t.Error("installUI=false verify should confirm the UI is disabled")
+	}
+
+	withPw := render(true, "s3cret")
+	if !strings.Contains(withPw["03-values.yaml"], `password: "s3cret"`) {
+		t.Error("a UI password should be wired into values")
+	}
+	if strings.Contains(on["03-values.yaml"], "password:") {
+		t.Error("no UI password should be written when none is set")
+	}
+	if !strings.Contains(on["04-install.sh"], "UI_PASSWORD") {
+		t.Error("install script should support the UI_PASSWORD env override")
+	}
+}
+
 func TestShScriptsMarkedExecutable(t *testing.T) {
 	arts, _ := Render(config.Default())
 	for _, a := range arts {

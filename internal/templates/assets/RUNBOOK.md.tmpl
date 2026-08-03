@@ -12,6 +12,7 @@ the Mirantis airgap install procedure for your specific configuration:
 | Charts (OCI)         | `{{.ChartsRepoURL}}` |
 | k0s fileserver URL   | `{{.FileserverURL}}` |
 | Install namespace    | `{{.Namespace}}` |
+| k0rdent UI (console) | `{{if .InstallUI}}install (enabled){{else}}do NOT install (disabled){{end}}` |
 | TLS mode             | `{{.TLSMode}}`{{if .UsesCustomTLS}} — secret `{{.CACertSecretName}}` from `{{.CACertPath}}`{{end}} |
 
 The install has **two sides**. Do them in order.
@@ -115,6 +116,20 @@ likely causes. Re-run `./check-access.sh` to re-test registry/fileserver access.
   require authentication (the v1.4.0 default). If yours does, you will also need
   image-pull and registry-credential secrets plus extra `values.yaml` keys — not
   generated here.
+{{- if .InstallUI}}
+- **k0rdent Enterprise UI (console).** Enabled (`k0rdent-ui.enabled: true`).
+  **Change the default password** — anyone who can reach the management-cluster
+  network could otherwise log in and deploy resources. Set it either in
+  `03-values.yaml` (`k0rdent-ui.auth.basic.password`) or, to keep it out of
+  files, at install time: `UI_PASSWORD='…' ./04-install.sh`. `05-verify.sh`
+  confirms the console is Available and serving; reach it with
+  `kubectl port-forward svc/{{.UIServiceName}} {{.UIPort}}:{{.UIPort}} -n {{.Namespace}}`
+  then open `http://localhost:{{.UIPort}}`.
+{{- else}}
+- **k0rdent Enterprise UI (console).** Disabled (`k0rdent-ui.enabled: false`).
+  `05-verify.sh` confirms no console pods are running. To enable it later, set
+  `k0rdent-ui.enabled: true` and upgrade, or regenerate with the UI turned on.
+{{- end}}
 {{- if .UsesCustomTLS}}
 - **TLS ({{.TLSModeLabel}}).** Before install, `04-install.sh` creates the
   `{{.CACertSecretName}}` secret from `{{.CACertPath}}` (override with

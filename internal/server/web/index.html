@@ -89,6 +89,17 @@
           </fieldset>
 
           <fieldset>
+            <legend>k0rdent Enterprise UI (console)</legend>
+            <label class="chk inline"><input type="checkbox" name="installUI" checked> Install the k0rdent Enterprise UI (web console)</label>
+            <p class="hint">Installed and enabled by the kcm chart by default. It runs in <code>kcm-system</code> as <code>kcm-k0rdent-ui</code> (port 3000). <code>05-verify.sh</code> checks it is Available and serving.</p>
+            <div id="ui-fields">
+              <label>UI basic-auth password (optional but recommended)
+                <input type="password" name="uiPassword" placeholder="leave blank to set at install with UI_PASSWORD"></label>
+              <p class="hint">⚠ The UI ships with a known default password. Set your own here (written into <code>03-values.yaml</code>) or, to keep it out of files, pass <code>UI_PASSWORD</code> to <code>04-install.sh</code>.</p>
+            </div>
+          </fieldset>
+
+          <fieldset>
             <legend>Install target &amp; sources</legend>
             <label>Install namespace
               <input name="namespace" placeholder="kcm-system"></label>

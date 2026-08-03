@@ -45,11 +45,25 @@ fi
 echo "==> Installing kcm ${KCM_VERSION} from ${CHART}"
 echo "    namespace: ${NAMESPACE}"
 echo "    values:    ${VALUES}"
+{{- if .InstallUI}}
+
+# k0rdent Enterprise UI is enabled. Optionally set its basic-auth password at
+# install time so it never lands in a file:
+#   UI_PASSWORD='choose-a-strong-password' ./04-install.sh
+UI_SET=()
+if [[ -n "${UI_PASSWORD:-}" ]]; then
+  echo "    k0rdent UI: setting basic-auth password from UI_PASSWORD"
+  UI_SET=(--set "k0rdent-ui.auth.basic.password=${UI_PASSWORD}")
+fi
+{{- end}}
 
 helm install kcm "${CHART}" \
   --version "${KCM_VERSION}" \
   -n "${NAMESPACE}" \
   --create-namespace \
+{{- if .InstallUI}}
+  ${UI_SET[@]+"${UI_SET[@]}"} \
+{{- end}}
   -f "${VALUES}"
 
 echo ""

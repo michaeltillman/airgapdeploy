@@ -51,6 +51,23 @@ velero:
 rbac-manager:
   image:
     repository: "{{.Registry}}/rbac-manager"
+# k0rdent Enterprise UI (web console). enabled toggles whether it is installed.
 k0rdent-ui:
+  enabled: {{.InstallUI}}
   image:
     repository: "{{.Registry}}/k0rdent-ui"
+{{- if .InstallUI}}
+{{- if .UIPassword}}
+  # SECURITY: this file now contains the UI basic-auth password in cleartext.
+  # Treat 03-values.yaml as a secret — do not commit or share it. To keep the
+  # password out of files, clear this and pass UI_PASSWORD to 04-install.sh.
+  auth:
+    basic:
+      password: "{{.UIPassword}}"
+{{- else}}
+  # SECURITY: the UI ships with a known default basic-auth password. Set your own
+  # here (auth.basic.password) OR pass UI_PASSWORD to 04-install.sh at install
+  # time. Anyone who can reach the management cluster network could otherwise log
+  # in and deploy resources. See the k0rdent UI configuration docs.
+{{- end}}
+{{- end}}

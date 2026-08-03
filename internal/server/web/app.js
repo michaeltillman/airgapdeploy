@@ -129,7 +129,7 @@ const TEXT_FIELDS = [
   "kcmVersion", "k0sVersion", "skopeoVersion", "registryHost", "registryProject",
   "fileserverURL", "fileserverNamespace", "storageClass", "pvcSize", "nginxImage",
   "busyboxImage", "namespace", "bundleBaseURL", "outputDir", "caCertPath", "caCertSecretName",
-  "acmeServer", "acmeEmail", "acmeIngressClass",
+  "acmeServer", "acmeEmail", "acmeIngressClass", "uiPassword",
 ];
 
 const CA_HINTS = {
@@ -143,7 +143,9 @@ function fillForm(cfg) {
   const mode = cfg.tlsMode || "none";
   const radio = $(`input[name="tlsMode"][value="${mode}"]`);
   if (radio) radio.checked = true;
+  $('input[name="installUI"]').checked = cfg.installUI !== false;
   updateTLS();
+  updateUI();
 }
 
 function readForm() {
@@ -152,7 +154,14 @@ function readForm() {
   cfg.architectures = $$('input[name="arch"]:checked').map((c) => c.value);
   const sel = $('input[name="tlsMode"]:checked');
   cfg.tlsMode = sel ? sel.value : "none";
+  cfg.installUI = $('input[name="installUI"]').checked;
   return cfg;
+}
+
+// Show the UI password field only when the console is being installed.
+function updateUI() {
+  const on = $('input[name="installUI"]').checked;
+  $("#ui-fields").classList.toggle("hidden", !on);
 }
 
 // Show the CA cert fields only when a cert mode is selected, and adapt the hint.
@@ -177,6 +186,7 @@ function wireForm() {
   form().registryHost.addEventListener("input", updateDerived);
   form().registryProject.addEventListener("input", updateDerived);
   $$('input[name="tlsMode"]').forEach((r) => r.addEventListener("change", updateTLS));
+  $('input[name="installUI"]').addEventListener("change", updateUI);
   // Clear a field's error the moment the user edits it.
   form().querySelectorAll("input").forEach((el) =>
     el.addEventListener("input", () => clearFieldError(el.name)));

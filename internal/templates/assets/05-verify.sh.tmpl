@@ -30,5 +30,49 @@ echo "==> ClusterTemplates (expect VALID = true)"
 kubectl get clustertemplate -n "${NAMESPACE}"
 
 echo ""
+{{- if .InstallUI}}
+echo "==> k0rdent Enterprise UI (console) — expect it installed and serving"
+UI_SVC="{{.UIServiceName}}"
+UI_PORT="{{.UIPort}}"
+
+# 1. Deployment rolled out
+if kubectl rollout status "deploy/${UI_SVC}" -n "${NAMESPACE}" --timeout=120s 2>/dev/null; then
+  echo "    deployment ${UI_SVC} is Available"
+else
+  echo "    ! deployment ${UI_SVC} not ready (name may differ; check: kubectl get deploy -n ${NAMESPACE} | grep -i ui)"
+  kubectl get pods -n "${NAMESPACE}" 2>/dev/null | grep -i k0rdent-ui || true
+fi
+
+# 2. Service + endpoints
+kubectl get svc "${UI_SVC}" -n "${NAMESPACE}" 2>/dev/null || echo "    ! Service ${UI_SVC} not found"
+eps=$(kubectl get endpoints "${UI_SVC}" -n "${NAMESPACE}" -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null)
+if [[ -n "${eps}" ]]; then
+  echo "    Service has endpoints: ${eps}"
+else
+  echo "    ! Service ${UI_SVC} has no ready endpoints yet"
+fi
+
+# 3. Reachability probe via a temporary port-forward (HTTP 200/302/401 = serving)
+echo "    Probing the UI over a temporary port-forward..."
+kubectl port-forward "svc/${UI_SVC}" "${UI_PORT}:${UI_PORT}" -n "${NAMESPACE}" >/dev/null 2>&1 &
+PF=$!
+sleep 4
+code=$(curl -s -o /dev/null -m 5 -w '%{http_code}' "http://localhost:${UI_PORT}/" 2>/dev/null || echo 000)
+kill "${PF}" 2>/dev/null || true
+case "${code}" in
+  200|302|301|401|403) echo "    UI responded HTTP ${code} — operational" ;;
+  *) echo "    ! UI did not respond as expected (HTTP ${code})" ;;
+esac
+echo "    Reach it with: kubectl port-forward svc/${UI_SVC} ${UI_PORT}:${UI_PORT} -n ${NAMESPACE}  ->  http://localhost:${UI_PORT}"
+{{- else}}
+echo "==> k0rdent Enterprise UI is DISABLED (installUI=false) — confirming it is not running"
+if kubectl get pods -n "${NAMESPACE}" --no-headers 2>/dev/null | grep -qi k0rdent-ui; then
+  echo "    ! Unexpected: k0rdent-ui pods are present even though the UI is disabled"
+else
+  echo "    OK: no k0rdent-ui pods present"
+fi
+{{- end}}
+
+echo ""
 echo "==> If pods are crashing, inspect with:"
 echo "      kubectl describe pod <pod-name> -n ${NAMESPACE}"
