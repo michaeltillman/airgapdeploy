@@ -18,7 +18,6 @@ const (
 	DefaultKcmVersion    = "1.4.0"
 	DefaultK0sVersion    = "v1.35.4+k0s.0"
 	DefaultSkopeoVersion = "v1.17.0"
-	DefaultNginxImage    = "nginx:1.30.2"
 	DefaultBusyboxImage  = "busybox:1.36.1"
 	DefaultNamespace     = "kcm-system"
 	DefaultBundleBaseURL = "https://get.mirantis.com/k0rdent-enterprise"
@@ -44,12 +43,11 @@ type Config struct {
 	// k0s binary HTTP fileserver
 	FileserverURL string `yaml:"fileserverURL" json:"fileserverURL"` // e.g. http://binary.local/k0rdent-enterprise
 
-	// In-cluster nginx fileserver (used to serve the k0s binary)
+	// In-cluster busybox httpd fileserver (serves the k0s binary)
 	FileserverNamespace string `yaml:"fileserverNamespace" json:"fileserverNamespace"`
 	StorageClass        string `yaml:"storageClass" json:"storageClass"`
 	PVCSize             string `yaml:"pvcSize" json:"pvcSize"`
-	NginxImage          string `yaml:"nginxImage" json:"nginxImage"`     // relative to RegistryHost
-	BusyboxImage        string `yaml:"busyboxImage" json:"busyboxImage"` // relative to Registry
+	BusyboxImage        string `yaml:"busyboxImage" json:"busyboxImage"` // relative to Registry (serves the k0s binary + loader)
 
 	// Install target
 	Namespace string `yaml:"namespace" json:"namespace"`
@@ -107,7 +105,6 @@ func Default() *Config {
 		FileserverNamespace: DefaultFileserverNS,
 		StorageClass:        "",
 		PVCSize:             DefaultPVCSize,
-		NginxImage:          DefaultNginxImage,
 		BusyboxImage:        DefaultBusyboxImage,
 		Namespace:           DefaultNamespace,
 		BundleBaseURL:       DefaultBundleBaseURL,
@@ -226,11 +223,6 @@ func (c *Config) PrimaryK0sBinary() string {
 // BusyboxImageRef returns the busybox image reference under the private registry.
 func (c *Config) BusyboxImageRef() string {
 	return c.Registry() + "/" + c.BusyboxImage
-}
-
-// NginxImageRef returns the nginx image reference (served from the registry host root).
-func (c *Config) NginxImageRef() string {
-	return c.RegistryHost + "/" + c.NginxImage
 }
 
 var (
@@ -392,12 +384,6 @@ func (c *Config) ValidateAll() map[string]string {
 		e["skopeoVersion"] = fmt.Sprintf("%q should look like v1.17.0", c.SkopeoVersion)
 	}
 
-	if strings.TrimSpace(c.NginxImage) == "" {
-		e["nginxImage"] = "nginx image is required (e.g. nginx:1.30.2)"
-	} else if !imageRe.MatchString(c.NginxImage) {
-		e["nginxImage"] = fmt.Sprintf("%q is not a valid image reference (name:tag)", c.NginxImage)
-	}
-
 	if strings.TrimSpace(c.BusyboxImage) == "" {
 		e["busyboxImage"] = "busybox image is required (e.g. busybox:1.36.1)"
 	} else if !imageRe.MatchString(c.BusyboxImage) {
@@ -479,9 +465,6 @@ func (c *Config) Normalize() {
 	}
 	if c.PVCSize == "" {
 		c.PVCSize = d.PVCSize
-	}
-	if c.NginxImage == "" {
-		c.NginxImage = d.NginxImage
 	}
 	if c.BusyboxImage == "" {
 		c.BusyboxImage = d.BusyboxImage

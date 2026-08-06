@@ -34,7 +34,6 @@ var templatePaths = []string{
 	"assets/01-prepare.sh.tmpl",
 	"assets/02-fileserver/namespace-pvc.yaml.tmpl",
 	"assets/02-fileserver/binary-loader.yaml.tmpl",
-	"assets/02-fileserver/configmap-nginx.yaml.tmpl",
 	"assets/02-fileserver/deployment-service.yaml.tmpl",
 	"assets/02-fileserver/load-k0s.sh.tmpl",
 	"assets/03-values.yaml.tmpl",

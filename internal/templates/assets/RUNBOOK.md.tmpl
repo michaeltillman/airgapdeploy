@@ -48,12 +48,13 @@ skopeo), cosign ≥2.4.1.
 ≥1.30) with a `StorageClass` and a LoadBalancer provider.
 
 ### 1. Stand up the k0s fileserver
+The fileserver runs **busybox `httpd`** (`{{.BusyboxImageRef}}`), which is already
+mirrored by `01-prepare.sh` — no separate web-server image to mirror.
 ```bash
 kubectl apply -f 02-fileserver/namespace-pvc.yaml
 kubectl apply -f 02-fileserver/binary-loader.yaml
 # copy the k0s binary into the PVC (expects the binary in the current dir):
 ./02-fileserver/load-k0s.sh
-kubectl apply -f 02-fileserver/configmap-nginx.yaml
 kubectl apply -f 02-fileserver/deployment-service.yaml
 ```
 

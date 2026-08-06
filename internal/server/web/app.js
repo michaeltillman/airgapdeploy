@@ -13,13 +13,12 @@ const PHASES = [
   },
   {
     id: "fileserver", label: "Fileserver",
-    intro: "Airgapped cluster side. Serves the k0s binary over HTTP via nginx. " +
-           "Apply in order, running load-k0s.sh after the loader pod is up.",
+    intro: "Airgapped cluster side. Serves the k0s binary over HTTP via busybox httpd " +
+           "(already mirrored). Apply in order, running load-k0s.sh after the loader pod is up.",
     files: [
       { name: "02-fileserver/namespace-pvc.yaml" },
       { name: "02-fileserver/binary-loader.yaml" },
       { name: "02-fileserver/load-k0s.sh", run: true },
-      { name: "02-fileserver/configmap-nginx.yaml" },
       { name: "02-fileserver/deployment-service.yaml" },
     ],
   },
@@ -127,7 +126,7 @@ function show(id) {
 // ---- Config form <-> object ------------------------------------------------
 const TEXT_FIELDS = [
   "kcmVersion", "k0sVersion", "skopeoVersion", "registryHost", "registryProject",
-  "fileserverURL", "fileserverNamespace", "storageClass", "pvcSize", "nginxImage",
+  "fileserverURL", "fileserverNamespace", "storageClass", "pvcSize",
   "busyboxImage", "namespace", "bundleBaseURL", "outputDir", "caCertPath", "caCertSecretName",
   "acmeServer", "acmeEmail", "acmeIngressClass", "uiPassword",
 ];

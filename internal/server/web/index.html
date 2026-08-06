@@ -82,10 +82,9 @@
               <input name="storageClass" placeholder=""></label>
             <label>PVC size
               <input name="pvcSize" placeholder="10Gi"></label>
-            <label>nginx image (registry host root)
-              <input name="nginxImage" placeholder="nginx:1.30.2"></label>
-            <label>busybox image (under project)
+            <label>busybox image (fileserver + loader; under project)
               <input name="busyboxImage" placeholder="busybox:1.36.1"></label>
+            <p class="hint">The fileserver runs busybox <code>httpd</code> — <code>busybox:1.36.1</code> ships in the k0rdent bundle, so it's already mirrored (no separate web-server image needed).</p>
           </fieldset>
 
           <fieldset>

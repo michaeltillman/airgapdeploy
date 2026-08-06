@@ -108,13 +108,13 @@ func TestValidateAll(t *testing.T) {
 	bad.Namespace = "BAD"
 	bad.PVCSize = "10gigs"
 	bad.SkopeoVersion = "1.17"
-	bad.NginxImage = "NOT VALID"
+	bad.BusyboxImage = "NOT VALID"
 	bad.StorageClass = "Bad_SC"
 	bad.Normalize()
 	got := bad.ValidateAll()
 	// Note: caCertPath is not asserted here — Normalize backfills it to ./ca.crt,
 	// so a missing cert surfaces via the checks package (checkCACert), not here.
-	for _, key := range []string{"kcmVersion", "registryHost", "fileserverURL", "namespace", "pvcSize", "skopeoVersion", "nginxImage", "storageClass"} {
+	for _, key := range []string{"kcmVersion", "registryHost", "fileserverURL", "namespace", "pvcSize", "skopeoVersion", "busyboxImage", "storageClass"} {
 		if _, ok := got[key]; !ok {
 			t.Errorf("expected error for field %q, got keys %v", key, keysOf(got))
 		}

@@ -54,7 +54,6 @@ func Run(cfg *config.Config) []Result {
 	}
 	jobs = append(jobs,
 		checkRegistry,
-		checkNginxImage,
 		checkBusyboxImage,
 		checkVersionAvailable,
 		checkK0sBinaries,
@@ -237,14 +236,10 @@ func checkImageTag(cfg *config.Config, id, label, field, repo, tag string) Resul
 	return r
 }
 
-func checkNginxImage(cfg *config.Config) Result {
-	name, tag := splitImageTag(cfg.NginxImage) // served from the registry root
-	return checkImageTag(cfg, "img-nginx", "nginx image present", "nginxImage", name, tag)
-}
-
 func checkBusyboxImage(cfg *config.Config) Result {
+	// busybox serves the k0s fileserver and the loader pod; it must be mirrored.
 	name, tag := splitImageTag(cfg.BusyboxImage) // lives under the project
-	return checkImageTag(cfg, "img-busybox", "busybox image present", "busyboxImage", cfg.RegistryProject+"/"+name, tag)
+	return checkImageTag(cfg, "img-busybox", "busybox image present (fileserver)", "busyboxImage", cfg.RegistryProject+"/"+name, tag)
 }
 
 func checkK0sBinaries(cfg *config.Config) Result {

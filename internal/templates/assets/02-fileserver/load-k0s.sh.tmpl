@@ -33,6 +33,6 @@ echo "==> Removing the loader pod"
 kubectl delete pod binary-loader -n "${NS}"
 
 echo ""
-echo "==> DONE. Now apply configmap-nginx.yaml and deployment-service.yaml,"
+echo "==> DONE. Now apply deployment-service.yaml,"
 echo "    then read the external IP with:"
 echo "      kubectl get svc k0s-fileserver -n ${NS} --watch"
